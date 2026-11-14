@@ -7,7 +7,7 @@
 <meta name="theme-color" content="#e7e3db" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#100f0e" media="(prefers-color-scheme: dark)">
 <title>Ratio — proportions pour le dessin</title>
-<meta name="description" content="Placez une photo de référence sur votre feuille de dessin : orientation, cadrage, dimensions, mise au carreau et repères de distance.">
+<meta name="description" content="Placez une photo de référence sur votre feuille de dessin : orientation, cadrage, dimensions, mise au carreau, points repères et distances.">
 <style>
 :root{
   color-scheme:light dark;
@@ -95,11 +95,15 @@ dd small{display:block;color:var(--muted);font-weight:400;font-size:11.5px}
 .marks li.on{border-color:var(--accent);background:var(--accent-soft)}
 .marks .mk{display:flex;align-items:center;gap:10px;border:0;background:none;padding:8px 10px;text-align:left;cursor:pointer;min-width:0}
 .marks .num{flex:none;width:22px;height:22px;border-radius:50%;background:#e2500f;color:#fff;font-size:12px;font-weight:700;display:grid;place-items:center}
-.marks b{display:block;font-variant-numeric:tabular-nums}
+.marks .mk>span:last-child{min-width:0}
+.marks b{display:block;font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .marks small{display:block;color:var(--muted);font-size:11.5px;font-variant-numeric:tabular-nums}
 .marks .del{border:0;background:none;width:38px;height:38px;font-size:19px;line-height:1;color:var(--muted);cursor:pointer;border-radius:8px}
 .marks .del:hover{color:var(--accent)}
-.marks p{grid-column:1/-1;margin:0;padding:0 12px 10px 42px;font-size:12px;color:var(--muted);line-height:1.5}
+/* repère sélectionné : son nom, et le détail de ses positions */
+.marks .more{grid-column:1/-1;padding:0 12px 10px 42px}
+.marks .more input{display:block;width:100%;padding:7px 10px;background:var(--panel);border:1px solid var(--line);border-radius:8px;color:var(--ink)}
+.marks .more p{margin:8px 0 0;font-size:12px;color:var(--muted);line-height:1.5}
 
 /* ---------- scène ---------- */
 main{display:flex;flex-direction:column;min-width:0;min-height:0;background:var(--stage)}
@@ -109,21 +113,32 @@ main{display:flex;flex-direction:column;min-width:0;min-height:0;background:var(
 .toolbar .seg button[aria-pressed=true]{background:var(--soft);box-shadow:none}
 .toolbar .spacer{flex:1}
 .tools{display:flex;align-items:center;gap:10px;flex:1;min-width:0}
+/* Le canvas couvre toute la scène : la feuille y est dessinée à travers la vue (zoom et déplacement d'affichage).
+   .paper (dessous) donne le papier et son ombre, .sheet (dessus) porte les cotes et la zone de dépôt ;
+   tous deux suivent le rectangle de la feuille à l'écran, fourni par --sx/--sy/--sw/--sh. */
 .stage{
-  flex:1;min-height:0;position:relative;overflow:hidden;display:grid;place-items:center;
+  flex:1;min-height:0;position:relative;overflow:hidden;
   -webkit-user-select:none;user-select:none;-webkit-touch-callout:none;
 }
-.sheet{position:relative;box-shadow:0 1px 2px rgba(0,0,0,.18),0 14px 40px rgba(0,0,0,.22);background:var(--paper)}
-.sheet canvas{display:block;width:100%;height:100%;touch-action:none;-webkit-touch-callout:none}
-/* rognage : la photo entière remplace la feuille, entourée d'une marge pour saisir les poignées des bords */
-.sheet.cropping{background:transparent;box-shadow:none}
-.sheet.cropping .dim{display:none}
+.stage canvas{position:absolute;top:0;left:0;width:100%;height:100%;display:block;touch-action:none;-webkit-touch-callout:none}
+.paper,.sheet{position:absolute;left:var(--sx,0px);top:var(--sy,0px);width:var(--sw,0px);height:var(--sh,0px)}
+.paper{background:var(--paper);box-shadow:0 1px 2px rgba(0,0,0,.18),0 14px 40px rgba(0,0,0,.22)}
+.sheet{pointer-events:none}
+.stage.cropping .paper,.stage.cropping .sheet{display:none}      /* rognage : la photo entière remplace la feuille */
+.stage.zoomed .dim{display:none}
+.zoomer{
+  position:absolute;right:12px;bottom:12px;display:flex;align-items:center;gap:2px;padding:3px;
+  border-radius:10px;background:var(--panel);box-shadow:0 1px 3px rgba(0,0,0,.22);
+}
+.zoomer button{border:0;background:none;min-width:32px;height:30px;border-radius:7px;cursor:pointer;font-size:15px;line-height:1}
+.zoomer button:hover{background:var(--soft)}
+.zoomer #zFit{min-width:58px;font-size:12.5px;font-variant-numeric:tabular-nums}
 .dim{position:absolute;font-size:11.5px;color:var(--muted);white-space:nowrap;font-variant-numeric:tabular-nums}
 .dim.w{left:50%;top:-22px;transform:translateX(-50%)}
 .dim.h{left:-13px;top:50%;transform:translate(-50%,-50%) rotate(-90deg)}
 .drop{
   position:absolute;top:0;left:0;width:100%;height:100%;display:grid;place-items:center;text-align:center;cursor:pointer;
-  color:#6f6a62;padding:16px;border:0;background:transparent;
+  color:#6f6a62;padding:16px;border:0;background:transparent;pointer-events:auto;
 }
 .drop div{border:1.5px dashed #c9c3b8;border-radius:12px;padding:22px 18px;max-width:260px}
 .drop strong{display:block;color:#1f1d1a;font-size:15px;margin-bottom:4px}
@@ -134,7 +149,7 @@ main{display:flex;flex-direction:column;min-width:0;min-height:0;background:var(
 }
 .status span{white-space:nowrap}
 .status b{color:var(--ink);font-weight:600}
-body.dragover .sheet{outline:3px solid var(--accent);outline-offset:4px}
+body.dragover .paper{outline:3px solid var(--accent);outline-offset:4px}
 
 /* ---------- téléphone tenu à la verticale : la feuille en haut, les réglages en onglets ---------- */
 .tabs{display:none}
@@ -161,7 +176,7 @@ body.dragover .sheet{outline:3px solid var(--accent);outline-offset:4px}
   aside .brand,aside h2{display:none}
   aside section:not(.on){display:none}
   .toolbar{padding:8px 12px}
-  .status{padding:4px 12px;height:48px}          /* deux lignes */
+  .status{padding:4px 12px 0;height:44px;margin-bottom:4px}          /* deux lignes, pas une de plus */
   .status span{white-space:normal}
 }
 /* téléphone à l'horizontale ou fenêtre étroite : deux colonnes resserrées */
@@ -171,10 +186,11 @@ body.dragover .sheet{outline:3px solid var(--accent);outline-offset:4px}
   #mSides{flex-wrap:wrap}
   #mSides>*{flex:1 1 40%}
   .toolbar{padding:8px 12px}
-  .status{padding:4px 12px;height:48px}
+  .status{padding:4px 12px 0;height:44px;margin-bottom:4px}
   .status span{white-space:normal}
 }
-@media (max-width:380px){.wide-only{display:none}}
+@media (max-width:430px){.wide-only{display:none}}
+@media (max-width:350px){.toolbar .seg button{padding-left:8px;padding-right:8px}}
 @media (pointer:coarse){
   input,select{font-size:16px}          /* évite le zoom automatique d'iOS à la saisie */
   .seg button{padding-top:10px;padding-bottom:10px}
@@ -182,6 +198,9 @@ body.dragover .sheet{outline:3px solid var(--accent);outline-offset:4px}
   .link{padding:10px 0}
   .slider input{height:30px}
   .fine-only{display:none}
+  .zoomer .step{display:none}           /* au doigt on pince ; il reste la pastille pour revenir à la feuille entière */
+  .zoomer button{height:38px}
+  .zoomer #zFit{min-width:70px}
 }
 </style>
 </head>
@@ -249,8 +268,8 @@ body.dragover .sheet{outline:3px solid var(--accent);outline-offset:4px}
       </div>
       <div class="advice" id="advice">Ajoutez une photo pour obtenir un conseil de cadrage.</div>
       <div class="slider" id="zoomRow" hidden>
-        <span>Zoom</span>
-        <input id="zoom" type="range" min="1" max="4" step="0.01" value="1" aria-label="Zoom">
+        <span>Agrandir</span>
+        <input id="zoom" type="range" min="1" max="4" step="0.01" value="1" aria-label="Agrandissement de l'image dans la feuille">
         <output id="zoomOut">× 1</output>
       </div>
       <div class="acts" id="cropActs" hidden>
@@ -269,7 +288,7 @@ body.dragover .sheet{outline:3px solid var(--accent);outline-offset:4px}
     </section>
 
     <section data-tab="marks">
-      <h2>5 · Repères de distance</h2>
+      <h2>5 · Repères</h2>
       <p class="hint" id="marksHint" style="margin-top:0"></p>
       <ol class="marks" id="marks"></ol>
       <button class="btn" id="clearMarks" style="margin-top:10px" hidden>Tout effacer</button>
@@ -294,8 +313,9 @@ body.dragover .sheet{outline:3px solid var(--accent);outline-offset:4px}
     <div class="toolbar">
       <div class="tools" id="tools">
         <div class="seg" id="tool" role="group" aria-label="Outil">
-          <button data-v="move">Déplacer</button>
-          <button data-v="mark">Repères</button>
+          <button data-v="move" title="Placer l'image sur la feuille">Cadrer</button>
+          <button data-v="point" title="Poser un point repère">Point</button>
+          <button data-v="dist" title="Mesurer la distance entre deux points">Distance</button>
         </div>
         <span class="spacer"></span>
         <button class="btn primary" id="export" disabled title="Image de la feuille avec le cadrage, la grille et les repères">Exporter<span class="wide-only"> l'image</span></button>
@@ -308,11 +328,17 @@ body.dragover .sheet{outline:3px solid var(--accent);outline-offset:4px}
       </div>
     </div>
     <div class="stage" id="stage">
+      <div class="paper"></div>
+      <canvas id="cv"></canvas>
       <div class="sheet" id="sheet">
-        <canvas id="cv"></canvas>
         <span class="dim w" id="dimW"></span>
         <span class="dim h" id="dimH"></span>
         <button class="drop" id="drop"><div><strong id="dropT">Déposez votre photo ici</strong><span id="dropS">ou cliquez pour la choisir</span></div></button>
+      </div>
+      <div class="zoomer" id="zoomer" hidden>
+        <button class="step" id="zOut" type="button" aria-label="Dézoomer la vue">−</button>
+        <button id="zFit" type="button" title="Revoir la feuille entière">100 %</button>
+        <button class="step" id="zIn" type="button" aria-label="Zoomer la vue">+</button>
       </div>
     </div>
     <div class="status" id="status"></div>
@@ -327,11 +353,13 @@ const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 const fmt = (n, d = 1) => n.toLocaleString('fr-FR', { maximumFractionDigits: d });
 const num = n => fmt(Math.abs(n) < 0.05 ? 0 : n);
 const cm = n => num(n) + ' cm';
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const SIDES = ['mt', 'mb', 'ml', 'mr'];   // marges haut, bas, gauche, droite
 const mqCoarse = matchMedia('(pointer:coarse)'), coarse = () => mqCoarse.matches;
 const PAPER = '#fdfcf8', INK = '#e2500f';
 const MAX_SIDE = 4000;   // plus grand côté de la copie de travail et de l'export (limite des canvas sur mobile)
-const MAX_ZOOM = 4;
+const MAX_ZOOM = 4;      // agrandissement maximal de l'image dans la feuille (cadrage)
+const MAX_VIEW = 8;      // zoom maximal de la vue (affichage seulement)
 const rowName = j => (j >= 26 ? String.fromCharCode(64 + Math.floor(j / 26)) : '') + String.fromCharCode(65 + j % 26);
 
 const st = {
@@ -344,17 +372,22 @@ const st = {
   split: false, mt: null, mb: null, ml: null, mr: null,   // …ou une marge par côté, feuille vue comme à l'écran
   orient: 'auto',   // auto | portrait | landscape
   mode: null,       // null = suivre le conseil | fit | cover
-  zoom: 1, cx: 0, cy: 0,
+  zoom: 1, cx: 0, cy: 0,    // cadrage « remplir » : agrandissement de l'image et centre de la zone montrée (pixels de l'image)
   grid: 0,
-  tool: 'move',     // move | mark
-  marks: [],        // repères de distance : { a:{x,y}, b:{x,y} } en pixels de l'image
+  tool: 'move',     // move (cadrer l'image) | point | dist
+  marks: [],        // repères, en pixels de l'image : point { a, name } ou distance { a, b, name }
   sel: -1,          // repère sélectionné
   hover: null,      // position de la souris sur la feuille (cm)
 };
 const ui = {
   tab: 'photo', open: true,     // onglets de la version téléphone
   crop: null, reopen: true,     // cadre en cours de réglage pendant le rognage (pixels de la photo entière)
+  markTool: 'point',            // dernier outil de repère utilisé
 };
+// Vue : zoom d'affichage et point de la feuille (cm) placé au centre de la scène.
+// Elle ne fait que grossir ce qu'on voit : ni le cadrage de l'image sur la feuille ni les repères n'en dépendent.
+const cam = { z: 1, x: 0, y: 0, key: '' };
+const keys = { space: false };
 try {
   const s = JSON.parse(localStorage.getItem('ratio') || '{}');
   const ok = (k, min) => Number.isFinite(s[k]) && s[k] >= min && s[k] <= 500;
@@ -367,13 +400,15 @@ const save = () => {
   try { localStorage.setItem('ratio', JSON.stringify({ w: st.w, h: st.h, m: st.m, grid: st.grid, split: st.split, mt: st.mt, mb: st.mb, ml: st.ml, mr: st.mr })); } catch {}
 };
 
-const cv = $('cv'), ctx = cv.getContext('2d'), sheet = $('sheet'), stage = $('stage');
+const cv = $('cv'), ctx = cv.getContext('2d'), stage = $('stage');
 // La feuille (photo + grille) est peinte dans `base` ; l'écran y ajoute les repères, le survol et la loupe.
 const base = document.createElement('canvas'), bctx = base.getContext('2d');
-let L = null, view = { k: 1, u: 1 };
-let act = null;               // geste en cours : pan | new | end | pinch | hold
-const ptrs = new Map();       // pointeurs posés sur la feuille → position (cm)
-const labelRects = [];        // étiquettes des repères à l'écran (pour les sélectionner)
+let L = null;
+// k : pixels physiques par cm · u : pixels physiques par pixel écran · ox, oy : coin haut-gauche de la feuille dans le canvas
+let view = { k: 1, u: 1, ox: 0, oy: 0, k0: 1 };
+let act = null;               // geste en cours : img | view | pinch | new | end | crop
+const ptrs = new Map();       // pointeurs posés sur la scène → position à l'écran
+const labelRects = [];        // étiquettes des repères à l'écran (pour les saisir)
 
 /* ---------- géométrie (tout en cm sur la feuille) ---------- */
 // Feuille dans une orientation donnée et zone utile une fois les marges retirées.
@@ -407,7 +442,6 @@ function layout() {
   const rec = loss <= 0.15 ? 'cover' : 'fit';
   const mode = st.mode || rec;
   const wider = ri > ra;                                 // l'image est plus allongée que la feuille
-  const s0 = Math.max(A.w / st.iw, A.h / st.ih);         // échelle « remplir » sans zoom (cm par pixel)
   let D, src, s;
   if (mode === 'fit') {
     s = Math.min(A.w / st.iw, A.h / st.ih);
@@ -415,20 +449,20 @@ function layout() {
     D = { x: A.x + (A.w - dw) / 2, y: A.y + (A.h - dh) / 2, w: dw, h: dh };
     src = { x: 0, y: 0, w: st.iw, h: st.ih };
   } else {
-    s = s0 * st.zoom;
+    s = Math.max(A.w / st.iw, A.h / st.ih) * st.zoom;    // cm par pixel
     const vw = A.w / s, vh = A.h / s;
     st.cx = clamp(st.cx, vw / 2, st.iw - vw / 2);
     st.cy = clamp(st.cy, vh / 2, st.ih - vh / 2);
     D = A;
     src = { x: st.cx - vw / 2, y: st.cy - vh / 2, w: vw, h: vh };
   }
-  return { ...out, D, src, s, s0, mode, rec, loss, wider, used: (src.w * src.h) / (st.iw * st.ih) };
+  return { ...out, D, src, s, mode, rec, loss, wider, used: (src.w * src.h) / (st.iw * st.ih) };
 }
-// photo (pixels) ↔ feuille (cm)
+// image (pixels) ↔ feuille (cm)
 const toSheet = q => ({ x: L.D.x + (q.x - L.src.x) * L.s, y: L.D.y + (q.y - L.src.y) * L.s });
 const toImgRaw = p => ({ x: L.src.x + (p.x - L.D.x) / L.s, y: L.src.y + (p.y - L.D.y) / L.s });
 const toImg = p => { const q = toImgRaw(p); return { x: clamp(q.x, 0, st.iw), y: clamp(q.y, 0, st.ih) }; };
-const cssCm = n => n * view.u / view.k;                  // pixels écran → cm sur la feuille
+const cssCm = n => n * view.u / view.k;                  // pixels écran → cm sur la feuille, au zoom de la vue
 const mid = (a, b) => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
 const dist = (a, b) => Math.hypot(b.x - a.x, b.y - a.y);
 function distSeg(p, a, b) {
@@ -436,13 +470,34 @@ function distSeg(p, a, b) {
   const t = l2 ? clamp(((p.x - a.x) * vx + (p.y - a.y) * vy) / l2, 0, 1) : 0;
   return Math.hypot(p.x - a.x - t * vx, p.y - a.y - t * vy);
 }
+const ends = m => m.b ? [m.a, m.b] : [m.a];
+const nameOf = m => (m.name || '').trim();
+// Texte d'un repère sur la feuille : son numéro, son nom s'il en a un, sa mesure. `full` ajoute la position d'un point (export).
+function markText(m, i, a, b, full) {
+  let n = nameOf(m);
+  if (n.length > 24) n = n.slice(0, 23) + '…';
+  if (b) return `${i + 1} · ${n ? n + ' · ' : ''}${cm(dist(a, b))}`;
+  return (i + 1) + (n ? ' · ' + n : '') + (full ? ` · ${num(a.x)} ; ${cm(a.y)}` : '');
+}
 
 /* ---------- dessin (écran et export partagent ce code) ---------- */
+// Partout, l'origine du contexte est le coin haut-gauche de la feuille : l'appelant y place le canvas.
 function pill(c, x, y, w, h) {
   const r = h / 2;
   c.beginPath();
   c.moveTo(x + r, y); c.lineTo(x + w - r, y); c.arc(x + w - r, y + r, r, -Math.PI / 2, Math.PI / 2);
   c.lineTo(x + r, y + h); c.arc(x + r, y + r, r, Math.PI / 2, Math.PI * 1.5); c.closePath();
+}
+// Partie d'un segment visible dans le rectangle r, ou null.
+function clipSeg(ax, ay, bx, by, r) {
+  const dx = bx - ax, dy = by - ay;
+  let t0 = 0, t1 = 1;
+  for (const [p, q] of [[-dx, ax - r.x0], [dx, r.x1 - ax], [-dy, ay - r.y0], [dy, r.y1 - ay]]) {
+    if (p === 0) { if (q < 0) return null; continue; }
+    const t = q / p;
+    if (p < 0) { if (t > t1) return null; if (t > t0) t0 = t; } else { if (t < t0) return null; if (t < t1) t1 = t; }
+  }
+  return [ax + t0 * dx, ay + t0 * dy, ax + t1 * dx, ay + t1 * dy];
 }
 
 // Dessine une zone de l'image (coordonnées en pixels de l'image, c'est-à-dire de la zone gardée de la photo).
@@ -455,12 +510,12 @@ function drawPhoto(c, sx, sy, sw, sh, dx, dy, dw, dh) {
   c.drawImage(st.img, st.crop.x + x0, st.crop.y + y0, x1 - x0, y1 - y0, dx + (x0 - sx) * fx, dy + (y0 - sy) * fy, (x1 - x0) * fx, (y1 - y0) * fy);
 }
 
-function paintBase(c, k, u, L) {
+// La feuille : papier, image cadrée, marges et grille.
+function paintSheet(c, k, u, L) {
   const px = v => v * k, D = L.D;
-  c.setTransform(1, 0, 0, 1, 0, 0);
   c.lineCap = 'butt';
   c.fillStyle = PAPER;
-  c.fillRect(0, 0, c.canvas.width, c.canvas.height);
+  c.fillRect(0, 0, px(L.W), px(L.H));
 
   if (st.img) {
     c.imageSmoothingEnabled = true; c.imageSmoothingQuality = 'high';
@@ -503,55 +558,99 @@ function paintBase(c, k, u, L) {
   }
 }
 
-// Repères de distance : un trait entre deux points de la photo, étiqueté de sa longueur sur le papier.
-function paintMarks(c, k, u, L, screen) {
+// Cotes d'un point sélectionné : traits jusqu'au bord gauche et au bord haut de la feuille, avec les distances.
+function paintGuides(c, u, ax, ay, a, vb) {
+  const lines = () => { c.beginPath(); c.moveTo(0, ay); c.lineTo(ax, ay); c.moveTo(ax, 0); c.lineTo(ax, ay); c.stroke(); };
+  c.save(); c.setLineDash([5 * u, 4 * u]); c.lineCap = 'butt';
+  c.lineWidth = 3 * u; c.strokeStyle = 'rgba(255,255,255,.7)'; lines();
+  c.lineWidth = 1.2 * u; c.strokeStyle = INK; lines();
+  c.restore();
+  const tag = (t, x, y) => {
+    const tw = c.measureText(t).width + 12 * u, th = 19 * u;
+    pill(c, x - tw / 2, y - th / 2, tw, th);
+    c.fillStyle = '#fff'; c.fill(); c.lineWidth = 1.2 * u; c.strokeStyle = INK; c.stroke();
+    c.fillStyle = INK; c.fillText(t, x, y + 0.5 * u);
+  };
+  // chaque distance s'écrit au milieu de la partie visible de son trait
+  const x0 = Math.max(0, vb.x0), x1 = Math.min(ax - 16 * u, vb.x1), y0 = Math.max(0, vb.y0), y1 = Math.min(ay - 16 * u, vb.y1);
+  if (x1 - x0 > 64 * u && ay > vb.y0 && ay < vb.y1) tag(cm(a.x), (x0 + x1) / 2, ay);
+  if (y1 - y0 > 30 * u && ax > vb.x0 && ax < vb.x1) tag(cm(a.y), ax, (y0 + y1) / 2);
+}
+
+// Repères : un point (une cible qui laisse voir le détail visé) ou une distance (un trait entre deux points).
+// `vb` est la partie visible, pour y garder les étiquettes.
+function paintMarks(c, k, u, L, screen, vb) {
   if (screen) labelRects.length = 0;
   if (!st.img || !st.marks.length) return;
-  const px = v => v * k, W = c.canvas.width, H = c.canvas.height;
+  const px = v => v * k;
   const live = screen && act?.type === 'end' ? act.i : -1;
   const order = st.marks.map((_, i) => i);
   if (screen && st.sel >= 0 && st.sel < order.length) order.push(order.splice(st.sel, 1)[0]);   // le repère sélectionné au-dessus
-  c.font = `600 ${11.5 * u}px system-ui,sans-serif`; c.textAlign = 'center'; c.textBaseline = 'middle'; c.lineCap = 'round';
+  c.font = `600 ${11.5 * u}px system-ui,sans-serif`; c.textAlign = 'center'; c.textBaseline = 'middle';
+  // pastille décalée de (x, y) dans la direction (nx, ny), ramenée dans la partie visible
+  const placed = [];
+  const label = (i, t, x, y, nx, ny, gap, on) => {
+    const tw = c.measureText(t).width + 16 * u, th = 21 * u, off = gap + Math.abs(nx) * tw / 2 + Math.abs(ny) * th / 2;
+    const lx = clamp(x + nx * off, vb.x0 + tw / 2 + 2 * u, vb.x1 - tw / 2 - 2 * u), fitY = v => clamp(v, vb.y0 + th / 2 + 2 * u, vb.y1 - th / 2 - 2 * u);
+    let ly = fitY(y + ny * off);
+    // si elle en recouvrirait une autre, on la glisse juste en dessous ou au-dessus
+    const over = v => placed.some(r => Math.abs(lx - r.x) < (tw + r.w) / 2 + 2 * u && Math.abs(v - r.y) < (th + r.h) / 2 + 2 * u);
+    if (over(ly)) for (const n of [1, -1, 2, -2, 3, -3]) { const v = fitY(ly + n * (th + 3 * u)); if (!over(v)) { ly = v; break; } }
+    placed.push({ x: lx, y: ly, w: tw, h: th });
+    pill(c, lx - tw / 2, ly - th / 2, tw, th);
+    c.fillStyle = INK; c.fill();
+    if (on) { c.lineWidth = 2 * u; c.strokeStyle = '#fff'; c.stroke(); }
+    c.fillStyle = '#fff'; c.fillText(t, lx, ly + 0.5 * u);
+    if (screen) labelRects[i] = { x: lx - tw / 2, y: ly - th / 2, w: tw, h: th };
+  };
   for (const i of order) {
-    const m = st.marks[i], a = toSheet(m.a), b = toSheet(m.b), on = screen && (i === st.sel || i === live);
-    const ax = px(a.x), ay = px(a.y), bx = px(b.x), by = px(b.y);
+    const m = st.marks[i], a = toSheet(m.a), ax = px(a.x), ay = px(a.y), on = screen && (i === st.sel || i === live);
+    if (!m.b) {
+      if (on && i !== live && a.x > 0 && a.y > 0) paintGuides(c, u, ax, ay, a, vb);     // pendant qu'on le déplace, les lignes de visée suffisent
+      const R = (on ? 8 : 6) * u, T = (on ? 14 : 11) * u;
+      const target = () => {
+        c.beginPath(); c.arc(ax, ay, R, 0, 7);
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { c.moveTo(ax + dx * R, ay + dy * R); c.lineTo(ax + dx * T, ay + dy * T); }
+        c.stroke();
+      };
+      c.lineCap = 'butt';
+      c.lineWidth = (on ? 5.5 : 4.5) * u; c.strokeStyle = 'rgba(255,255,255,.9)'; target();
+      c.lineWidth = (on ? 2.5 : 2) * u; c.strokeStyle = INK; target();
+      c.beginPath(); c.arc(ax, ay, 2.6 * u, 0, 7); c.fillStyle = '#fff'; c.fill();
+      c.beginPath(); c.arc(ax, ay, 1.5 * u, 0, 7); c.fillStyle = INK; c.fill();
+      if (ax >= vb.x0 && ax <= vb.x1 && ay >= vb.y0 && ay <= vb.y1) label(i, markText(m, i, a, null, !screen), ax, ay, 0.64, -0.77, T - 3 * u, on);
+      continue;
+    }
+    const b = toSheet(m.b), bx = px(b.x), by = px(b.y);
     const seg = () => { c.beginPath(); c.moveTo(ax, ay); c.lineTo(bx, by); c.stroke(); };
+    c.lineCap = 'round';
     c.lineWidth = (on ? 5.5 : 4.5) * u; c.strokeStyle = 'rgba(255,255,255,.85)'; seg();
     c.lineWidth = (on ? 2.5 : 2) * u; c.strokeStyle = INK; seg();
     for (const [x, y] of [[ax, ay], [bx, by]]) {
       c.beginPath(); c.arc(x, y, (on ? 6.5 : 4) * u, 0, 7);
       c.fillStyle = '#fff'; c.fill(); c.lineWidth = (on ? 2.5 : 2) * u; c.strokeStyle = INK; c.stroke();
     }
-    // étiquette décalée perpendiculairement au trait, vers le haut
-    const mx = (ax + bx) / 2, my = (ay + by) / 2, dpx = Math.hypot(bx - ax, by - ay);
-    if (mx < 0 || mx > W || my < 0 || my > H) continue;
-    const t = `${i + 1} · ${cm(dist(a, b))}`;
-    const tw = c.measureText(t).width + 16 * u, th = 21 * u;
+    // étiquette au milieu de la partie visible du trait, décalée perpendiculairement vers le haut
+    const vis = clipSeg(ax, ay, bx, by, vb), d = Math.hypot(bx - ax, by - ay);
+    if (!vis) continue;
     let nx = 0, ny = -1;
-    if (dpx > 1) {
-      nx = (by - ay) / dpx; ny = -(bx - ax) / dpx;
+    if (d > 1) {
+      nx = (by - ay) / d; ny = -(bx - ax) / d;
       if (ny > 0 || (ny === 0 && nx < 0)) { nx = -nx; ny = -ny; }
     }
-    const off = 9 * u + Math.abs(nx) * tw / 2 + Math.abs(ny) * th / 2;
-    const lx = clamp(mx + nx * off, tw / 2 + 2 * u, W - tw / 2 - 2 * u);
-    const ly = clamp(my + ny * off, th / 2 + 2 * u, H - th / 2 - 2 * u);
-    pill(c, lx - tw / 2, ly - th / 2, tw, th);
-    c.fillStyle = INK; c.fill();
-    if (on) { c.lineWidth = 2 * u; c.strokeStyle = '#fff'; c.stroke(); }
-    c.fillStyle = '#fff'; c.fillText(t, lx, ly + 0.5 * u);
-    if (screen) labelRects[i] = { x: lx - tw / 2, y: ly - th / 2, w: tw, h: th };
+    label(i, markText(m, i, a, b, false), (vis[0] + vis[2]) / 2, (vis[1] + vis[3]) / 2, nx, ny, 9 * u, on);
   }
 }
 
 // Par-dessus : lignes de visée, aimantation et loupe pendant qu'on pose ou ajuste un point.
-function paintOverlay(c, k, u, L) {
+function paintOverlay(c, k, u, L, vb) {
   if (!st.img) return;
-  const px = v => v * k, W = c.canvas.width, H = c.canvas.height;
+  const px = v => v * k;
   const drag = act?.type === 'end' ? toSheet(st.marks[act.i][act.end]) : null;
-  const aim = drag || (st.tool === 'mark' && !act ? st.hover : null);
+  const aim = drag || (st.tool !== 'move' && !act ? st.hover : null);
   if (aim) {
     const x = px(aim.x), y = px(aim.y);
-    const lines = () => { c.beginPath(); c.moveTo(x, 0); c.lineTo(x, H); c.moveTo(0, y); c.lineTo(W, y); c.stroke(); };
+    const lines = () => { c.beginPath(); c.moveTo(x, vb.y0); c.lineTo(x, vb.y1); c.moveTo(vb.x0, y); c.lineTo(vb.x1, y); c.stroke(); };
     c.save(); c.setLineDash([4 * u, 4 * u]); c.lineCap = 'butt';
     c.lineWidth = 3 * u; c.strokeStyle = 'rgba(255,255,255,.5)'; lines();
     c.lineWidth = 1 * u; c.strokeStyle = INK; lines();
@@ -559,7 +658,7 @@ function paintOverlay(c, k, u, L) {
   }
   if (!drag) return;
   const x = px(drag.x), y = px(drag.y);
-  if (act.snapped) {            // le point s'est aimanté sur l'extrémité d'un autre repère
+  if (act.snapped) {            // le point s'est aimanté sur un repère existant
     c.beginPath(); c.arc(x, y, 12 * u, 0, 7);
     c.lineWidth = 4 * u; c.strokeStyle = 'rgba(255,255,255,.85)'; c.stroke();
     c.lineWidth = 1.5 * u; c.strokeStyle = INK; c.stroke();
@@ -568,9 +667,9 @@ function paintOverlay(c, k, u, L) {
   // Loupe : montre ce que le doigt cache, au-dessus du point si la place le permet, sinon sur le côté.
   const q = st.marks[act.i][act.end], R = 50 * u, M = 2.4;
   let lx = x, ly = y - R - 42 * u;
-  if (ly < R + 4 * u) { lx = x + (x > W / 2 ? -1 : 1) * (R + 52 * u); ly = y; }
-  lx = clamp(lx, R + 4 * u, W - R - 4 * u); ly = clamp(ly, R + 4 * u, H - R - 4 * u);
-  const r = R / (M * L.s * k);                           // rayon montré, en pixels de la photo
+  if (ly < vb.y0 + R + 4 * u) { lx = x + (x > (vb.x0 + vb.x1) / 2 ? -1 : 1) * (R + 52 * u); ly = y; }
+  lx = clamp(lx, vb.x0 + R + 4 * u, vb.x1 - R - 4 * u); ly = clamp(ly, vb.y0 + R + 4 * u, vb.y1 - R - 4 * u);
+  const r = R / (M * L.s * k);                           // rayon montré, en pixels de l'image
   c.save();
   c.shadowColor = 'rgba(0,0,0,.4)'; c.shadowBlur = 14 * u; c.shadowOffsetY = 3 * u;
   c.beginPath(); c.arc(lx, ly, R, 0, 7); c.fillStyle = PAPER; c.fill();
@@ -579,30 +678,30 @@ function paintOverlay(c, k, u, L) {
   c.beginPath(); c.arc(lx, ly, R, 0, 7); c.clip();
   c.imageSmoothingEnabled = true; c.imageSmoothingQuality = 'high';
   drawPhoto(c, q.x - r, q.y - r, 2 * r, 2 * r, lx - R, ly - R, 2 * R, 2 * R);
-  // Les repères y figurent aussi, agrandis de même, pour viser une extrémité déjà posée.
+  // Les repères y figurent aussi, agrandis de même, pour viser un point déjà posé.
   const S = R / r, lp = p => [lx + (p.x - q.x) * S, ly + (p.y - q.y) * S];
+  const dot = (ex, ey) => { c.beginPath(); c.arc(ex, ey, 5 * u, 0, 7); c.fillStyle = '#fff'; c.fill(); c.lineWidth = 2 * u; c.strokeStyle = INK; c.stroke(); };
   c.lineCap = 'butt';
   st.marks.forEach((m, i) => {
-    let [ax, ay] = lp(m.a), [bx, by] = lp(m.b);
     const own = i === act.i;
-    if (own) {                  // le trait en cours s'arrête avant le centre, pour laisser voir le point visé
-      const [fx, fy] = act.end === 'a' ? [bx, by] : [ax, ay], d = Math.hypot(fx - lx, fy - ly), gap = 9 * u;
-      if (d <= gap) return;
-      ax = fx; ay = fy; bx = lx + (fx - lx) * gap / d; by = ly + (fy - ly) * gap / d;
+    if (m.b) {
+      let [ax, ay] = lp(m.a), [bx, by] = lp(m.b), show = true;
+      if (own) {                // le trait en cours s'arrête avant le centre, pour laisser voir le point visé
+        const [fx, fy] = act.end === 'a' ? [bx, by] : [ax, ay], d = Math.hypot(fx - lx, fy - ly), gap = 9 * u;
+        show = d > gap;
+        if (show) { ax = fx; ay = fy; bx = lx + (fx - lx) * gap / d; by = ly + (fy - ly) * gap / d; }
+      }
+      if (show) {
+        const seg = () => { c.beginPath(); c.moveTo(ax, ay); c.lineTo(bx, by); c.stroke(); };
+        c.lineWidth = 4.5 * u; c.strokeStyle = 'rgba(255,255,255,.85)'; seg();
+        c.lineWidth = 2 * u; c.strokeStyle = INK; seg();
+      }
     }
-    const seg = () => { c.beginPath(); c.moveTo(ax, ay); c.lineTo(bx, by); c.stroke(); };
-    c.lineWidth = 4.5 * u; c.strokeStyle = 'rgba(255,255,255,.85)'; seg();
-    c.lineWidth = 2 * u; c.strokeStyle = INK; seg();
-    for (const end of ['a', 'b']) {
-      if (own && end === act.end) continue;
-      const [ex, ey] = lp(m[end]);
-      c.beginPath(); c.arc(ex, ey, 5 * u, 0, 7);
-      c.fillStyle = '#fff'; c.fill(); c.lineWidth = 2 * u; c.strokeStyle = INK; c.stroke();
-    }
+    for (const end of m.b ? ['a', 'b'] : ['a']) if (!(own && end === act.end)) dot(...lp(m[end]));
   });
   c.restore();
   c.beginPath(); c.arc(lx, ly, R, 0, 7); c.lineWidth = 3 * u; c.strokeStyle = '#fff'; c.stroke();
-  if (act.snapped) {            // aimanté : le réticule se verrouille sur l'extrémité existante
+  if (act.snapped) {            // aimanté : le réticule se verrouille sur le point existant
     c.beginPath(); c.arc(lx, ly, 10 * u, 0, 7);
     c.lineWidth = 4.5 * u; c.strokeStyle = 'rgba(255,255,255,.9)'; c.stroke();
     c.lineWidth = 2 * u; c.strokeStyle = INK; c.stroke();
@@ -617,37 +716,98 @@ function paintOverlay(c, k, u, L) {
   c.lineWidth = 1.5 * u; c.strokeStyle = INK; reticle();
 }
 
-function fitCanvas() {
-  const r = stage.getBoundingClientRect(), pad = r.width < 520 ? 26 : 40, dpr = window.devicePixelRatio || 1;
-  const s = Math.min(Math.max(120, r.width - pad * 2) / L.W, Math.max(120, r.height - pad * 2) / L.H);
-  // Taille entière en pixels physiques ; la hauteur est arrondie vers le bas pour que le dessin couvre la feuille jusqu'au bord.
-  const pw = Math.max(1, Math.round(L.W * s * dpr)), ph = Math.max(1, Math.floor(L.H * pw / L.W + 1e-6));
-  sheet.style.width = pw / dpr + 'px'; sheet.style.height = ph / dpr + 'px';
+/* ---------- vue : le canvas couvre la scène, la feuille s'y affiche à travers `cam` ---------- */
+function sizeStage() {
+  const r = stage.getBoundingClientRect(), u = window.devicePixelRatio || 1;
+  const sw = Math.max(1, r.width), sh = Math.max(1, r.height), pw = Math.round(sw * u), ph = Math.round(sh * u);
   if (cv.width !== pw || cv.height !== ph) { cv.width = base.width = pw; cv.height = base.height = ph; }
-  view = { k: pw / L.W, u: dpr };
+  return { sw, sh, u };
+}
+function fitView() {
+  const { sw, sh, u } = sizeStage(), pad = sw < 520 ? 26 : 40;
+  const k0 = Math.min(Math.max(120, sw - 2 * pad) / L.W, Math.max(120, sh - 2 * pad) / L.H);   // feuille entière : px écran par cm
+  const key = L.W + '×' + L.H;
+  if (cam.key !== key || !st.img) { cam.key = key; cam.z = 1; }       // autre feuille : on la revoit en entier
+  cam.z = clamp(cam.z, 1, MAX_VIEW);
+  const k = k0 * cam.z;
+  // la vue ne quitte pas la feuille : centrée si elle tient dans la scène, sinon arrêtée à ses bords
+  const lim = (c, total, size) => total * k <= size - 2 * pad + 0.5 ? total / 2 : clamp(c, (size / 2 - pad) / k, total - (size / 2 - pad) / k);
+  cam.x = lim(cam.x, L.W, sw); cam.y = lim(cam.y, L.H, sh);
+  const ox = sw / 2 - cam.x * k, oy = sh / 2 - cam.y * k;
+  view = { k: k * u, u, ox: Math.round(ox * u), oy: Math.round(oy * u), k0 };
+  const s = stage.style;      // rectangle de la feuille à l'écran, pour le papier, les cotes et la zone de dépôt
+  s.setProperty('--sx', ox + 'px'); s.setProperty('--sy', oy + 'px'); s.setProperty('--sw', L.W * k + 'px'); s.setProperty('--sh', L.H * k + 'px');
+  stage.classList.toggle('zoomed', cam.z > 1.001);
+}
+// Place le point `anchor` de la feuille (cm) sous le point d'écran `pt`, au zoom donné. Le cadrage ne change pas.
+function setCam(z, anchor, pt) {
+  const r = cv.getBoundingClientRect();
+  cam.z = clamp(z, 1, MAX_VIEW);
+  const k = view.k0 * cam.z;
+  cam.x = anchor.x - (pt.x - r.left - r.width / 2) / k;
+  cam.y = anchor.y - (pt.y - r.top - r.height / 2) / k;
+}
+function paintBase() {
+  bctx.setTransform(1, 0, 0, 1, 0, 0);
+  bctx.clearRect(0, 0, base.width, base.height);
+  bctx.setTransform(1, 0, 0, 1, view.ox, view.oy);
+  paintSheet(bctx, view.k, view.u, L);
 }
 function repaint() {
   if (ui.crop) return paintCrop();
+  const vb = { x0: -view.ox, y0: -view.oy, x1: cv.width - view.ox, y1: cv.height - view.oy };
   ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, cv.width, cv.height);
   ctx.drawImage(base, 0, 0);
-  paintMarks(ctx, view.k, view.u, L, true);
-  paintOverlay(ctx, view.k, view.u, L);
+  ctx.setTransform(1, 0, 0, 1, view.ox, view.oy);
+  paintMarks(ctx, view.k, view.u, L, true, vb);
+  paintOverlay(ctx, view.k, view.u, L, vb);
   status();
+}
+function zoomUI() {
+  const zoomed = cam.z > 1.001, pct = Math.round(cam.z * 100) + ' %';
+  $('zoomer').hidden = !st.img || !!ui.crop || (coarse() && !zoomed);
+  $('zFit').textContent = coarse() ? pct + ' ✕' : pct;
+  $('zOut').disabled = !zoomed; $('zIn').disabled = cam.z >= MAX_VIEW - 1e-6;
+}
+function setCursor() {
+  cv.style.cursor = act?.type === 'view' || act?.type === 'img' ? 'grabbing'
+    : keys.space ? 'grab'
+    : st.tool !== 'move' ? 'crosshair'
+    : st.img && (L.mode === 'cover' || cam.z > 1.001) ? 'grab' : 'default';
+}
+// La vue a bougé : on redessine sans rien recalculer du cadrage ni des réglages.
+function viewUpdate() {
+  if (ui.crop) return;
+  fitView(); zoomUI(); paintBase(); repaint();
+}
+// Regroupe les mouvements du pointeur : au plus un rendu par image affichée.
+// Niveau 0 : survol · 1 : repères (liste + tracé) · 2 : vue · 3 : tout (mise en page, image, réglages).
+let raf = 0, rafLevel = 0;
+function schedule(level) {
+  rafLevel = Math.max(rafLevel, level);
+  if (raf) return;
+  raf = requestAnimationFrame(() => {
+    raf = 0; const l = rafLevel; rafLevel = 0;
+    if (l === 3) return render();
+    if (l === 2) return viewUpdate();
+    if (l === 1) marksUI();
+    repaint();
+  });
 }
 
 /* ---------- rognage de la photo d'origine ---------- */
 // Pendant le rognage, la photo entière remplace la feuille ; on y règle un cadre par ses coins, ses bords
 // ou son intérieur. Une fois validé, la zone gardée devient l'image pour tout le reste de l'outil.
-const CROP_M = 24;                 // marge autour de la photo (pixels écran), pour saisir les poignées jusqu'au bord
 const CROP_CUR = { nw: 'nwse-resize', se: 'nwse-resize', ne: 'nesw-resize', sw: 'nesw-resize', n: 'ns-resize', s: 'ns-resize', e: 'ew-resize', w: 'ew-resize', move: 'move' };
-let cropView = { s: 1, u: 1 };     // s : pixels écran par pixel de photo · u : pixels physiques par pixel écran
+let cropView = { s: 1, u: 1, ox: 0, oy: 0 };     // s : px écran par pixel de photo · ox, oy : coin de la photo à l'écran
 const fullRect = () => ({ x: 0, y: 0, w: st.img.width, h: st.img.height });
 
 function openCrop() {
   if (!st.img || ui.crop) return;
   document.activeElement?.blur?.();
   ui.crop = { ...st.crop }; ui.reopen = ui.open; ui.open = false;     // sur téléphone, toute la place pour la photo
-  act = null; ptrs.clear(); st.hover = null;
+  cancelAct(); ptrs.clear(); st.hover = null;
   render();
 }
 function closeCrop(apply) {
@@ -663,37 +823,35 @@ function setCrop(c) {
   const x = clamp(Math.round(c.x), 0, FW - 1), y = clamp(Math.round(c.y), 0, FH - 1);
   const w = clamp(Math.round(c.w), 1, FW - x), h = clamp(Math.round(c.h), 1, FH - y);
   if (x === o.x && y === o.y && w === o.w && h === o.h) return;
-  for (const m of st.marks) for (const q of [m.a, m.b]) { q.x += o.x - x; q.y += o.y - y; }
+  for (const m of st.marks) for (const q of ends(m)) { q.x += o.x - x; q.y += o.y - y; }
   Object.assign(st, { crop: { x, y, w, h }, iw: w, ih: h, zoom: 1, cx: w / 2, cy: h / 2, mode: null, sel: -1 });
+  cam.z = 1;
   photoUI();
 }
 function fitCropView() {
-  const r = stage.getBoundingClientRect(), u = window.devicePixelRatio || 1, pad = 6, FW = st.img.width, FH = st.img.height;
-  const s = Math.max(1e-3, Math.min((r.width - 2 * pad - 2 * CROP_M) / FW, (r.height - 2 * pad - 2 * CROP_M) / FH));
-  const pw = Math.max(1, Math.round((FW * s + 2 * CROP_M) * u)), ph = Math.max(1, Math.round((FH * s + 2 * CROP_M) * u));
-  sheet.style.width = pw / u + 'px'; sheet.style.height = ph / u + 'px';
-  if (cv.width !== pw || cv.height !== ph) { cv.width = base.width = pw; cv.height = base.height = ph; }
-  cropView = { s, u };
+  const { sw, sh, u } = sizeStage(), pad = 30, FW = st.img.width, FH = st.img.height;     // la marge laisse saisir les poignées des bords
+  const s = Math.max(1e-3, Math.min((sw - 2 * pad) / FW, (sh - 2 * pad) / FH));
+  cropView = { s, u, ox: (sw - FW * s) / 2, oy: (sh - FH * s) / 2 };
   bctx.setTransform(1, 0, 0, 1, 0, 0);
-  bctx.clearRect(0, 0, pw, ph);
+  bctx.clearRect(0, 0, base.width, base.height);
   bctx.imageSmoothingEnabled = true; bctx.imageSmoothingQuality = 'high';
-  bctx.drawImage(st.img, 0, 0, FW, FH, CROP_M * u, CROP_M * u, FW * s * u, FH * s * u);
+  bctx.drawImage(st.img, 0, 0, FW, FH, cropView.ox * u, cropView.oy * u, FW * s * u, FH * s * u);
 }
 function paintCrop() {
-  const { s, u } = cropView, c = ui.crop, k = s * u, o = CROP_M * u, X = v => o + v * k;
-  const x0 = X(c.x), y0 = X(c.y), x1 = X(c.x + c.w), y1 = X(c.y + c.h), r = X(st.img.width), b = X(st.img.height);
+  const { s, u, ox, oy } = cropView, c = ui.crop, X = v => (ox + v * s) * u, Y = v => (oy + v * s) * u;
+  const x0 = X(c.x), y0 = Y(c.y), x1 = X(c.x + c.w), y1 = Y(c.y + c.h), l = X(0), t = Y(0), r = X(st.img.width), b = Y(st.img.height);
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.clearRect(0, 0, cv.width, cv.height);
   ctx.drawImage(base, 0, 0);
   ctx.fillStyle = 'rgba(18,16,14,.66)';                   // ce qui sera retiré est assombri
-  ctx.fillRect(o, o, r - o, y0 - o); ctx.fillRect(o, y1, r - o, b - y1);
-  ctx.fillRect(o, y0, x0 - o, y1 - y0); ctx.fillRect(x1, y0, r - x1, y1 - y0);
+  ctx.fillRect(l, t, r - l, y0 - t); ctx.fillRect(l, y1, r - l, b - y1);
+  ctx.fillRect(l, y0, x0 - l, y1 - y0); ctx.fillRect(x1, y0, r - x1, y1 - y0);
   ctx.lineCap = 'butt';
   ctx.lineWidth = u; ctx.strokeStyle = 'rgba(255,255,255,.45)';        // tiers
   ctx.beginPath();
-  for (const t of [1 / 3, 2 / 3]) {
-    ctx.moveTo(x0 + (x1 - x0) * t, y0); ctx.lineTo(x0 + (x1 - x0) * t, y1);
-    ctx.moveTo(x0, y0 + (y1 - y0) * t); ctx.lineTo(x1, y0 + (y1 - y0) * t);
+  for (const f of [1 / 3, 2 / 3]) {
+    ctx.moveTo(x0 + (x1 - x0) * f, y0); ctx.lineTo(x0 + (x1 - x0) * f, y1);
+    ctx.moveTo(x0, y0 + (y1 - y0) * f); ctx.lineTo(x1, y0 + (y1 - y0) * f);
   }
   ctx.stroke();
   ctx.lineWidth = 3 * u; ctx.strokeStyle = 'rgba(0,0,0,.35)'; ctx.strokeRect(x0, y0, x1 - x0, y1 - y0);
@@ -712,7 +870,7 @@ function paintCrop() {
   ctx.lineWidth = 4.5 * u; ctx.strokeStyle = '#fff'; handles();
   status();
 }
-const cropPt = e => { const r = cv.getBoundingClientRect(); return { x: (e.clientX - r.left - CROP_M) / cropView.s, y: (e.clientY - r.top - CROP_M) / cropView.s }; };
+const cropPt = e => { const r = cv.getBoundingClientRect(); return { x: (e.clientX - r.left - cropView.ox) / cropView.s, y: (e.clientY - r.top - cropView.oy) / cropView.s }; };
 // Ce que le pointeur saisit : un coin, un bord, l'intérieur du cadre (pour le déplacer) ou rien.
 function cropHit(p, touch) {
   const c = ui.crop, tol = (touch ? 26 : 10) / cropView.s, xs = [c.x, c.x + c.w], ys = [c.y, c.y + c.h];
@@ -740,19 +898,6 @@ function cropDrag(a, p) {
   if (a.h.includes('s')) y1 = clamp(y1 + dy, y0 + min, FH);
   ui.crop = { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
 }
-// Regroupe les mouvements du pointeur : au plus un rendu par image affichée.
-// Niveau 0 : survol · 1 : repères (liste + tracé) · 2 : tout (mise en page, photo, réglages).
-let raf = 0, rafLevel = 0;
-function schedule(level) {
-  rafLevel = Math.max(rafLevel, level);
-  if (raf) return;
-  raf = requestAnimationFrame(() => {
-    raf = 0; const l = rafLevel; rafLevel = 0;
-    if (l === 2) return render();
-    if (l === 1) marksUI();
-    repaint();
-  });
-}
 
 /* ---------- interface ---------- */
 function press(groupId, value, recValue) {
@@ -772,16 +917,17 @@ function render() {
   $('panel').dataset.tab = ui.tab;
   for (const s of document.querySelectorAll('aside section')) s.classList.toggle('on', s.dataset.tab === ui.tab);
   press('tabs', ui.open ? ui.tab : null);
-  sheet.classList.toggle('cropping', cropping);
+  stage.classList.toggle('cropping', cropping);
   $('tools').hidden = cropping; $('cropTools').hidden = !cropping;
   $('cropOpen').disabled = cropping; $('cropActs').hidden = !has || cropping;
-  if (cropping) fitCropView(); else fitCanvas();
+  if (cropping) fitCropView(); else fitView();
+  zoomUI();
 
   $('dimW').textContent = cm(L.W); $('dimH').textContent = cm(L.H);
   $('drop').hidden = has; $('export').disabled = !has;
   press('orient', st.orient); press('tool', st.tool);
   press('mode', L.mode, has ? L.rec : null);
-  if (!cropping) cv.style.cursor = st.tool === 'mark' ? 'crosshair' : (has && L.mode === 'cover' ? (act?.type === 'pan' ? 'grabbing' : 'grab') : 'default');
+  if (!cropping) setCursor();
 
   // orientation
   let oh = '';
@@ -830,55 +976,63 @@ function render() {
 
   marksUI();
   if (cropping) return paintCrop();
-  paintBase(bctx, view.k, view.u, L);
+  paintBase();
   repaint();
 }
 
 function marksUI() {
-  const n = st.marks.length;
+  const list = $('marks'), n = st.marks.length;
   $('marksHint').hidden = n > 0;
-  $('marksHint').textContent = !st.img ? 'Ajoutez une photo pour y mesurer des distances.'
-    : coarse() ? 'Faites glisser d\'un point à un autre de la photo : la distance affichée est celle à reporter sur votre feuille. Touchez de nouveau l\'onglet pour agrandir la feuille.'
-    : 'Avec l\'outil Repères, faites glisser d\'un point à un autre de la photo (d\'un œil à l\'autre, par exemple) : la distance affichée est celle à reporter sur votre feuille.';
+  $('marksHint').textContent = !st.img ? 'Ajoutez une photo pour y poser des repères.'
+    : 'Outil Point : posez un point sur un détail de la photo, sa position sur la feuille s\'affiche. Outil Distance : glissez d\'un détail à un autre pour mesurer leur écart.';
   $('clearMarks').hidden = n < 2;
-  if (!st.img) { $('marks').innerHTML = ''; return; }
-  const s = L.src, e = 0.5;
-  $('marks').innerHTML = st.marks.map((m, i) => {
-    const a = toSheet(m.a), b = toSheet(m.b), on = i === st.sel || (act?.type === 'end' && act.i === i);
-    const out = [m.a, m.b].some(q => q.x < s.x - e || q.x > s.x + s.w + e || q.y < s.y - e || q.y > s.y + s.h + e);
+  if (list.contains(document.activeElement) && document.activeElement.matches('input')) return;   // pas de reconstruction pendant la saisie d'un nom
+  if (!st.img) { list.innerHTML = ''; return; }
+  const s = L.src, e = 0.5, outside = q => q.x < s.x - e || q.x > s.x + s.w + e || q.y < s.y - e || q.y > s.y + s.h + e;
+  list.innerHTML = st.marks.map((m, i) => {
+    const a = toSheet(m.a), b = m.b && toSheet(m.b), on = i === st.sel || (act?.type === 'end' && act.i === i), name = nameOf(m);
+    const title = name ? esc(name) : b ? cm(dist(a, b)) : 'Point';
+    const sub = (b ? `${name ? cm(dist(a, b)) + ' · ' : ''}↔ ${cm(Math.abs(b.x - a.x))} · ↕ ${cm(Math.abs(b.y - a.y))}` : `${cm(a.x)} du bord gauche · ${cm(a.y)} du haut`)
+      + (ends(m).some(outside) ? ' · hors cadre' : '');
+    const more = !on ? '' : '<div class="more">'
+      + `<input data-name="${i}" value="${esc(m.name || '')}" placeholder="Nom du repère (facultatif)" maxlength="40" enterkeyhint="done" autocomplete="off" aria-label="Nom du repère ${i + 1}">`
+      + (b ? `<p>Du point situé à ${cm(a.x)} du bord gauche et ${cm(a.y)} du haut, jusqu'au point situé à ${cm(b.x)} du bord gauche et ${cm(b.y)} du haut.</p>` : '')
+      + '</div>';
     return `<li${on ? ' class="on"' : ''}>`
-      + `<button class="mk" data-i="${i}"><span class="num">${i + 1}</span><span><b>${cm(dist(a, b))}</b>`
-      + `<small>↔ ${cm(Math.abs(b.x - a.x))} · ↕ ${cm(Math.abs(b.y - a.y))}${out ? ' · hors cadre' : ''}</small></span></button>`
-      + `<button class="del" data-del="${i}" aria-label="Supprimer le repère ${i + 1}">×</button>`
-      + (on ? `<p>Du point situé à ${cm(a.x)} du bord gauche et ${cm(a.y)} du haut, jusqu'au point situé à ${cm(b.x)} du bord gauche et ${cm(b.y)} du haut.</p>` : '')
-      + '</li>';
+      + `<button class="mk" data-i="${i}"><span class="num">${i + 1}</span><span><b>${title}</b><small>${sub}</small></span></button>`
+      + `<button class="del" data-del="${i}" aria-label="Supprimer le repère ${i + 1}">×</button>${more}</li>`;
   }).join('');
 }
 
 function status() {
   const el = $('status');
   if (!st.img) { el.textContent = 'Commencez par ajouter une photo de référence.'; return; }
+  const touch = coarse();
   if (ui.crop) {
     const c = ui.crop, f = st.orig.f, pct = Math.round(100 * c.w * c.h / (st.img.width * st.img.height));
     el.innerHTML = `<span>Zone gardée : <b>${Math.round(c.w / f)} × ${Math.round(c.h / f)} px</b> (${pct} % de la photo)</span>`
-      + `<span>${coarse() ? 'glissez les coins, les bords ou l\'intérieur du cadre' : 'faites glisser les coins, les bords ou l\'intérieur du cadre, puis validez'}</span>`;
+      + `<span>${touch ? 'glissez les coins, les bords ou l\'intérieur du cadre' : 'faites glisser les coins, les bords ou l\'intérieur du cadre, puis validez'}</span>`;
     return;
   }
-  const parts = [];
-  if (st.tool === 'mark') {
+  const parts = [], nav = touch ? 'Deux doigts pour zoomer la vue.' : 'Molette pour zoomer la vue.';
+  if (st.tool !== 'move') {
     const drag = act?.type === 'end' ? act : null, i = drag ? drag.i : st.sel, m = st.marks[i];
     if (m) {
-      const a = toSheet(m.a), b = toSheet(m.b);
-      parts.push(`Repère ${i + 1} : <b>${cm(dist(a, b))}</b>`);
-      if (drag || !coarse()) parts.push(`↔ ${cm(Math.abs(b.x - a.x))}`, `↕ ${cm(Math.abs(b.y - a.y))}`);
-      if (drag) { const q = drag.end === 'a' ? a : b; parts.push(`point à <b>${cm(q.x)}</b> du bord gauche et <b>${cm(q.y)}</b> du haut`); }
-      else if (coarse()) parts.push('glissez une extrémité pour l\'ajuster', 'touchez ailleurs pour terminer');
-      else if (!st.hover) parts.push('faites glisser une extrémité pour l\'ajuster');
-    }
-    if (st.hover && !drag) parts.push(`Curseur à <b>${cm(st.hover.x)}</b> du bord gauche et <b>${cm(st.hover.y)}</b> du haut`);
-    if (!parts.length) parts.push('Faites glisser d\'un point à un autre de la photo pour poser un repère de distance.');
-  } else if (L.mode === 'cover') parts.push(coarse() ? 'Faites glisser l\'image pour la recadrer, pincez pour zoomer.' : 'Faites glisser l\'image pour la recadrer, molette pour zoomer.');
-  else parts.push('L\'image est entière et centrée sur la feuille.');
+      const a = toSheet(m.a), b = m.b && toSheet(m.b), label = esc(nameOf(m) || (b ? 'Distance ' : 'Point ') + (i + 1));
+      if (b) {
+        parts.push(`${label} : <b>${cm(dist(a, b))}</b>`);
+        if (drag || !touch) parts.push(`↔ ${cm(Math.abs(b.x - a.x))}`, `↕ ${cm(Math.abs(b.y - a.y))}`);
+        if (drag) { const q = drag.end === 'a' ? a : b; parts.push(`point à <b>${cm(q.x)}</b> du bord gauche et <b>${cm(q.y)}</b> du haut`); }
+        else if (st.tool === 'dist') parts.push(touch ? 'glissez une extrémité pour l\'ajuster' : 'faites glisser une extrémité pour l\'ajuster');
+      } else {
+        parts.push(`${label} : à <b>${cm(a.x)}</b> du bord gauche et <b>${cm(a.y)}</b> du haut`);
+        if (!drag && !touch && st.tool === 'point') parts.push('faites-le glisser pour le déplacer');
+      }
+    } else if (st.hover) parts.push(`Curseur à <b>${cm(st.hover.x)}</b> du bord gauche et <b>${cm(st.hover.y)}</b> du haut`);
+    else if (st.tool === 'point') parts.push(touch ? 'Touchez la photo pour poser un point ; gardez le doigt posé pour viser à la loupe.' : 'Cliquez sur la photo pour poser un point.', nav);
+    else parts.push(touch ? 'Glissez d\'un détail à un autre pour mesurer une distance.' : 'Faites glisser d\'un détail à un autre pour mesurer une distance.', nav);
+  } else if (L.mode === 'cover') parts.push(touch ? 'Glissez l\'image pour la placer sur la feuille.' : 'Faites glisser l\'image pour la placer sur la feuille.', nav.replace('.', ', sans effet sur le cadrage.'));
+  else parts.push('L\'image est entière et centrée sur la feuille.', nav);
   el.innerHTML = parts.map(p => `<span>${p}</span>`).join('');
 }
 
@@ -912,7 +1066,7 @@ function load(file) {
     Object.assign(st, { img: work, crop: { x: 0, y: 0, w: work.width, h: work.height }, iw: work.width, ih: work.height,
       orig: { name, w: nw, h: nh, f: work.width / nw },
       zoom: 1, cx: work.width / 2, cy: work.height / 2, mode: null, marks: [], sel: -1, hover: null });
-    act = null; ptrs.clear();
+    act = null; ptrs.clear(); cam.z = 1;
     $('photoErr').hidden = true;
     $('pick').textContent = 'Changer';
     if (ui.tab === 'photo') ui.tab = 'sheet';      // sur téléphone, on enchaîne sur l'étape suivante
@@ -979,51 +1133,92 @@ $('mToggle').onclick = () => {
   syncMargins(); save(); render();
 };
 const group = (id, fn) => $(id).addEventListener('click', e => { const b = e.target.closest('button'); if (b) { fn(b.dataset.v); render(); } });
-const setTool = v => { st.tool = v; st.hover = null; if (v === 'move') st.sel = -1; };
+function setTool(v) {
+  st.tool = v; st.hover = null;
+  if (v === 'move') { st.sel = -1; return; }
+  ui.markTool = v;
+  const m = st.marks[st.sel];
+  if (m && !!m.b !== (v === 'dist')) st.sel = -1;         // la sélection suit le genre de repère de l'outil
+}
 group('orient', v => { st.orient = v; st.mode = null; });
 group('mode', v => { st.mode = v; });
 group('tool', setTool);
 group('tabs', v => {
   if (ui.tab === v && ui.open) { ui.open = false; return; }          // retoucher l'onglet actif replie le panneau
   ui.tab = v; ui.open = true;
-  if (v === 'marks') setTool('mark'); else if (v === 'crop') setTool('move');
+  if (v === 'marks') { if (st.tool === 'move') setTool(ui.markTool); } else if (v === 'crop') setTool('move');
 });
-$('zoom').oninput = e => { st.zoom = +e.target.value; render(); };
+$('zoom').oninput = e => { st.zoom = clamp(+e.target.value, 1, MAX_ZOOM); render(); };
 $('grid').oninput = e => { st.grid = +e.target.value; save(); render(); };
+// zoom de la vue : boutons (la molette et le pincement font la même chose, autour du pointeur)
+function zoomStep(f) {
+  const r = cv.getBoundingClientRect(), c = { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+  setCam(cam.z * f, atCm(c), c); viewUpdate();
+}
+$('zIn').onclick = () => zoomStep(1.5);
+$('zOut').onclick = () => zoomStep(1 / 1.5);
+$('zFit').onclick = () => { cam.z = 1; viewUpdate(); };
 
 /* ---------- repères : liste ---------- */
 $('marks').addEventListener('click', e => {
+  if (e.target.closest('[data-name]')) return;
   const del = e.target.closest('[data-del]'), mk = e.target.closest('[data-i]');
   if (del) { st.marks.splice(+del.dataset.del, 1); st.sel = -1; }
-  else if (mk) { const i = +mk.dataset.i; st.sel = st.sel === i ? -1 : i; st.tool = 'mark'; }
-  else return;
+  else if (mk) {
+    const i = +mk.dataset.i;
+    if (st.sel === i) st.sel = -1; else { setTool(st.marks[i].b ? 'dist' : 'point'); st.sel = i; }
+  } else return;
   render();
 });
+// nom d'un repère : l'étiquette sur la feuille suit la saisie, la liste se remet à jour en sortant du champ
+$('marks').addEventListener('input', e => {
+  const el = e.target.closest('[data-name]'), m = el && st.marks[+el.dataset.name];
+  if (!m) return;
+  m.name = el.value;
+  const a = toSheet(m.a), b = m.b && toSheet(m.b);
+  el.closest('li').querySelector('b').textContent = nameOf(m) || (b ? cm(dist(a, b)) : 'Point');
+  schedule(0);
+});
+$('marks').addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.matches('[data-name]')) e.target.blur(); });
+$('marks').addEventListener('focusout', e => { if (e.target.matches?.('[data-name]')) setTimeout(render, 0); });
 $('clearMarks').onclick = () => {
   if (!confirm(`Effacer les ${st.marks.length} repères ?`)) return;
   st.marks = []; st.sel = -1; render();
 };
+const typing = () => /^(INPUT|SELECT|TEXTAREA)$/.test(document.activeElement?.tagName || '');
 addEventListener('keydown', e => {
-  if (/^(INPUT|SELECT|TEXTAREA)$/.test(document.activeElement?.tagName || '')) return;
+  if (typing()) return;
   if (ui.crop) {                // rognage : Entrée valide, Échap annule
     if (e.key === 'Enter') { e.preventDefault(); closeCrop(true); }
     else if (e.key === 'Escape') closeCrop(false);
+    return;
+  }
+  if (e.code === 'Space' && document.activeElement?.tagName !== 'BUTTON') {      // Espace + glisser : déplacer la vue
+    e.preventDefault();
+    if (!keys.space) { keys.space = true; st.hover = null; setCursor(); schedule(0); }
     return;
   }
   if (st.sel < 0) return;
   if (e.key === 'Delete' || e.key === 'Backspace') { st.marks.splice(st.sel, 1); st.sel = -1; e.preventDefault(); render(); }
   else if (e.key === 'Escape') { st.sel = -1; render(); }
 });
+addEventListener('keyup', e => { if (e.code === 'Space' && keys.space) { keys.space = false; setCursor(); } });
+addEventListener('blur', () => { keys.space = false; });
 
-/* ---------- gestes sur la feuille (souris, doigt, stylet) ---------- */
-const toCm = e => { const r = cv.getBoundingClientRect(); return { x: (e.clientX - r.left) / r.width * L.W, y: (e.clientY - r.top) / r.height * L.H }; };
+/* ---------- gestes sur la scène (souris, doigt, stylet) ---------- */
+// Deux doigts, la molette, le bouton du milieu ou Espace + glisser agissent toujours sur la vue.
+// Un doigt (ou le bouton gauche) agit selon l'outil : placer l'image, poser un point, mesurer une distance.
+const toCm = e => { const r = cv.getBoundingClientRect(); return { x: ((e.clientX - r.left) * view.u - view.ox) / view.k, y: ((e.clientY - r.top) * view.u - view.oy) / view.k }; };
+const atCm = pt => toCm({ clientX: pt.x, clientY: pt.y });
+const scr = e => ({ x: e.clientX, y: e.clientY });
+const onImage = (p, tol) => p.x >= L.D.x - tol && p.x <= L.D.x + L.D.w + tol && p.y >= L.D.y - tol && p.y <= L.D.y + L.D.h + tol;
 
-// Aimante un point sur l'extrémité d'un autre repère toute proche, pour enchaîner les mesures.
+// Aimante l'extrémité d'une distance sur un point ou une extrémité tout proches, pour mesurer entre repères existants.
 function snap(q, skip, touch) {
   let best = null, bd = cssCm(touch ? 10 : 8) / L.s;
   st.marks.forEach((m, i) => {
     if (i === skip) return;
-    for (const e of [m.a, m.b]) { const d = dist(e, q); if (d < bd) { bd = d; best = e; } }
+    for (const e of ends(m)) { const d = dist(e, q); if (d < bd) { bd = d; best = e; } }
   });
   return best ? { x: best.x, y: best.y } : q;
 }
@@ -1032,22 +1227,25 @@ function hitEnd(i, p, tol) {
   for (const end of ['a', 'b']) { const d = dist(toSheet(st.marks[i][end]), p); if (d <= bd) { bd = d; best = end; } }
   return best;
 }
-function hitMark(p, touch) {
+function hitPoint(p, tol) {
+  let best = -1, bd = tol;
+  st.marks.forEach((m, i) => { if (m.b) return; const d = dist(toSheet(m.a), p); if (d <= bd) { bd = d; best = i; } });
+  return best;
+}
+function hitLabel(p, touch, pointsOnly) {
   const x = p.x * view.k, y = p.y * view.k, pad = (touch ? 8 : 2) * view.u;
   for (let i = st.marks.length - 1; i >= 0; i--) {
     const r = labelRects[i];
-    if (r && x >= r.x - pad && x <= r.x + r.w + pad && y >= r.y - pad && y <= r.y + r.h + pad) return i;
+    if (r && !(pointsOnly && st.marks[i].b) && x >= r.x - pad && x <= r.x + r.w + pad && y >= r.y - pad && y <= r.y + r.h + pad) return i;
   }
-  let best = -1, bd = cssCm(touch ? 18 : 7);
-  st.marks.forEach((m, i) => { const d = distSeg(p, toSheet(m.a), toSheet(m.b)); if (d <= bd) { bd = d; best = i; } });
-  return best;
+  return -1;
 }
-// Mode « remplir » : place le point `anchor` de la photo sous le point `p` de la feuille, au zoom donné.
-function zoomAt(anchor, p, zoom) {
-  st.zoom = clamp(zoom, 1, MAX_ZOOM);
-  const s = L.s0 * st.zoom;
-  st.cx = anchor.x - (p.x - L.A.x) / s + L.A.w / s / 2;
-  st.cy = anchor.y - (p.y - L.A.y) / s + L.A.h / s / 2;
+function hitMark(p, touch) {
+  const i = hitLabel(p, touch, false);
+  if (i >= 0) return i;
+  let best = -1, bd = cssCm(touch ? 18 : 7);
+  st.marks.forEach((m, j) => { const a = toSheet(m.a), d = m.b ? distSeg(p, a, toSheet(m.b)) : dist(p, a); if (d <= bd) { bd = d; best = j; } });
+  return best;
 }
 // Quand le doigt se lève, son point de contact glisse de quelques pixels et emporterait le repère.
 // On revient donc à la dernière position où le doigt s'était posé (immobile un court instant),
@@ -1067,40 +1265,59 @@ function settle(a, now) {
     return;
   }
 }
+// Abandonne le geste en cours : un repère tout juste posé disparaît, un point déplacé retrouve sa place.
+function cancelAct() {
+  if (act?.type === 'end') {
+    if (act.created) { st.marks.splice(act.i, 1); st.sel = -1; }
+    else if (act.orig) st.marks[act.i][act.end] = act.orig;
+  }
+  act = null;
+}
 function startPinch() {
-  if (act?.type === 'end' && act.created) { st.marks.splice(act.i, 1); st.sel = -1; }   // repère en cours abandonné
-  L = layout();
-  const [p1, p2] = [...ptrs.values()];
-  act = L.mode === 'cover'
-    ? { type: 'pinch', d0: Math.max(cssCm(1), dist(p1, p2)), z0: st.zoom, anchor: toImgRaw(mid(p1, p2)) }
-    : { type: 'hold' };
+  cancelAct();
+  const [a, b] = [...ptrs.values()];
+  act = { type: 'pinch', d0: Math.max(10, dist(a, b)), z0: cam.z, anchor: atCm(mid(a, b)) };
   render();
 }
 
 cv.addEventListener('pointerdown', e => {
-  if (!st.img || (e.pointerType === 'mouse' && e.button !== 0)) return;
+  const mouse = e.pointerType === 'mouse';
+  if (!st.img || (mouse && e.button !== 0 && e.button !== 1)) return;
   const ae = document.activeElement;
   if (ae && /^(INPUT|SELECT)$/.test(ae.tagName)) ae.blur();           // referme le clavier du téléphone
   try { cv.setPointerCapture(e.pointerId); } catch {}
   if (ui.crop) {                // rognage : un seul pointeur règle le cadre
-    const p = cropPt(e), h = act ? null : cropHit(p, e.pointerType !== 'mouse');
+    const p = cropPt(e), h = act ? null : cropHit(p, !mouse);
     if (h) act = { type: 'crop', h, p0: p, c0: { ...ui.crop }, id: e.pointerId };
     return;
   }
-  L = layout();
-  const p = toCm(e), touch = e.pointerType !== 'mouse';
-  ptrs.set(e.pointerId, p);
-  if (ptrs.size > 1) { if (ptrs.size === 2) startPinch(); return; }   // deux doigts : zoom et déplacement
-  if (st.tool === 'mark') {
+  ptrs.set(e.pointerId, scr(e));
+  if (ptrs.size > 1) { if (ptrs.size === 2) startPinch(); return; }   // deux doigts : zoom et déplacement de la vue
+  const p = toCm(e), touch = !mouse, grab = () => { act = { type: 'view', at: scr(e), x: cam.x, y: cam.y }; setCursor(); };
+  if (mouse && (e.button === 1 || keys.space)) { e.preventDefault(); return grab(); }
+  if (mouse && e.button !== 0) return;
+  if (st.tool === 'point') {
     st.hover = null;
-    const end = st.sel >= 0 ? hitEnd(st.sel, p, cssCm(touch ? 26 : 10)) : null;
-    if (end) act = { type: 'end', i: st.sel, end, touch, down: p, off: null, trail: [] };
+    let i = hitPoint(p, cssCm(touch ? 24 : 9));
+    if (i < 0) i = hitLabel(p, touch, true);                          // la pastille d'un point le saisit aussi
+    if (i >= 0) act = { type: 'end', i, end: 'a', touch, down: p, off: null, trail: [], orig: { ...st.marks[i].a } };
+    else if (onImage(p, cssCm(6))) {                                  // nouveau point : il suit le doigt jusqu'au lever
+      const q = toImg(p);
+      st.marks.push({ a: q });
+      st.sel = st.marks.length - 1;
+      act = { type: 'end', i: st.sel, end: 'a', touch, off: { x: 0, y: 0 }, created: true, trail: [{ t: stamp(e), p, q, snapped: false }] };
+    }
+    schedule(1);
+  } else if (st.tool === 'dist') {
+    st.hover = null;
+    const sel = st.marks[st.sel], end = sel?.b ? hitEnd(st.sel, p, cssCm(touch ? 26 : 10)) : null;
+    if (end) act = { type: 'end', i: st.sel, end, touch, down: p, off: null, trail: [], orig: { ...sel[end] } };
     else act = { type: 'new', p0: p, touch };
     schedule(1);
   } else if (L.mode === 'cover') {
-    act = { type: 'pan', p0: p, cx: st.cx, cy: st.cy };
-    cv.style.cursor = 'grabbing';
-  }
+    act = { type: 'img', p0: p, cx: st.cx, cy: st.cy };
+    setCursor();
+  } else if (cam.z > 1.001) grab();                                   // image entière : il ne reste que la vue à déplacer
 });
 cv.addEventListener('pointermove', e => {
   if (!st.img) return;
@@ -1109,40 +1326,47 @@ cv.addEventListener('pointermove', e => {
     else if (e.pointerType === 'mouse') cv.style.cursor = CROP_CUR[cropHit(cropPt(e), false)] || 'default';
     return;
   }
-  const p = toCm(e);
-  if (ptrs.has(e.pointerId)) ptrs.set(e.pointerId, p);
+  if (ptrs.has(e.pointerId)) ptrs.set(e.pointerId, scr(e));
   if (!act) {
-    if (st.tool === 'mark' && e.pointerType === 'mouse') { st.hover = p; schedule(0); }
+    if (st.tool !== 'move' && e.pointerType === 'mouse' && !keys.space) { st.hover = toCm(e); schedule(0); }
     return;
   }
   if (act.type === 'pinch') {
     if (ptrs.size < 2) return;
-    const [p1, p2] = [...ptrs.values()];
-    zoomAt(act.anchor, mid(p1, p2), act.z0 * dist(p1, p2) / act.d0);
+    const [a, b] = [...ptrs.values()];
+    setCam(act.z0 * dist(a, b) / act.d0, act.anchor, mid(a, b));
     return schedule(2);
   }
-  if (act.type === 'pan') {
-    st.cx = act.cx - (p.x - act.p0.x) / L.s; st.cy = act.cy - (p.y - act.p0.y) / L.s;
+  if (act.type === 'view') {
+    const k = view.k0 * cam.z;
+    cam.x = act.x - (e.clientX - act.at.x) / k; cam.y = act.y - (e.clientY - act.at.y) / k;
     return schedule(2);
+  }
+  const p = toCm(e);
+  if (act.type === 'img') {       // cadrage : l'image glisse dans la feuille
+    st.cx = act.cx - (p.x - act.p0.x) / L.s; st.cy = act.cy - (p.y - act.p0.y) / L.s;
+    return schedule(3);
   }
   if (act.type === 'new') {
     if (dist(p, act.p0) < cssCm(act.touch ? 8 : 4)) return;           // simple appui tant que ça ne bouge pas
+    if (!onImage(act.p0, cssCm(6))) { act = null; return; }
     const a = snap(toImg(act.p0), -1, act.touch);
     st.marks.push({ a, b: { x: a.x, y: a.y } });
     st.sel = st.marks.length - 1;
     act = { type: 'end', i: st.sel, end: 'b', touch: act.touch, off: { x: 0, y: 0 }, created: true, trail: [] };
   }
   if (act.type === 'end') {
-    if (!act.off) {             // zone morte : un simple appui sur une extrémité ne la déplace pas
+    const m = st.marks[act.i];
+    if (!act.off) {             // zone morte : un simple appui sur un point ne le déplace pas
       const dead = cssCm(act.touch ? 5 : 2), d = dist(p, act.down);
       if (d < dead) return;
       // le point repart de sa place sans sauter, et garde ensuite son écart au doigt
-      const s = toSheet(st.marks[act.i][act.end]), f = dead / d;
+      const s = toSheet(m[act.end]), f = dead / d;
       act.off = { x: s.x - (act.down.x + (p.x - act.down.x) * f), y: s.y - (act.down.y + (p.y - act.down.y) * f) };
     }
-    const q = toImg({ x: p.x + act.off.x, y: p.y + act.off.y }), sq = snap(q, act.i, act.touch);
+    const q = toImg({ x: p.x + act.off.x, y: p.y + act.off.y }), sq = m.b ? snap(q, act.i, act.touch) : q;
     act.snapped = sq !== q;
-    st.marks[act.i][act.end] = sq;
+    m[act.end] = sq;
     const t = stamp(e), tr = act.trail;
     tr.push({ t, p, q: sq, snapped: act.snapped });
     while (tr.length > 2 && tr[1].t < t - 700) tr.shift();
@@ -1155,19 +1379,22 @@ function release(e, cancelled) {
     return;
   }
   if (!ptrs.delete(e.pointerId)) return;
-  if (act?.type === 'pinch' || act?.type === 'hold') {
-    L = layout();
+  if (act?.type === 'pinch') {
     if (ptrs.size >= 2) return startPinch();
-    if (ptrs.size === 1 && act.type === 'pinch') { const [p] = ptrs.values(); act = { type: 'pan', p0: p, cx: st.cx, cy: st.cy }; }   // le doigt restant continue de déplacer
-    else if (ptrs.size === 0) act = null;
+    const [p] = ptrs.values();                    // le doigt restant continue de déplacer la vue
+    act = p ? { type: 'view', at: p, x: cam.x, y: cam.y } : null;
     return render();
   }
   if (act?.type === 'new' && !cancelled) st.sel = hitMark(toCm(e), act.touch);      // simple appui : sélectionne ou désélectionne
-  if (act?.type === 'end' && act.touch && !cancelled) settle(act, stamp(e));
-  if (act?.type === 'end' && act.created) {
-    const m = st.marks[act.i];
-    if (cancelled || dist(m.a, m.b) * L.s < 0.1) { st.marks.splice(act.i, 1); st.sel = -1; }
-    else if (!act.touch) st.sel = -1;        // à la souris, on enchaîne les repères ; au doigt, il reste sélectionné pour l'ajuster
+  if (act?.type === 'end') {
+    if (cancelled) cancelAct();
+    else {
+      if (act.touch) settle(act, stamp(e));
+      const m = st.marks[act.i];
+      if (act.created && m.b && dist(m.a, m.b) * L.s < 0.1) { st.marks.splice(act.i, 1); st.sel = -1; }
+      else if (act.created && m.b && !act.touch) st.sel = -1;         // distances à la souris : on enchaîne ; au doigt, elle reste sélectionnée pour l'ajuster
+      else st.sel = act.i;
+    }
   }
   act = null;
   render();
@@ -1175,12 +1402,12 @@ function release(e, cancelled) {
 cv.addEventListener('pointerup', e => release(e, false));
 cv.addEventListener('pointercancel', e => release(e, true));
 cv.addEventListener('pointerleave', () => { if (st.hover) { st.hover = null; schedule(0); } });
+cv.addEventListener('mousedown', e => { if (e.button === 1) e.preventDefault(); });
 cv.addEventListener('wheel', e => {
-  if (!st.img || ui.crop || L.mode !== 'cover') return;
+  if (!st.img || ui.crop) return;
   e.preventDefault();
-  L = layout();
-  const p = toCm(e);
-  zoomAt(toImgRaw(p), p, st.zoom * Math.exp(-e.deltaY * 0.0015));
+  const dy = e.deltaMode === 1 ? e.deltaY * 33 : e.deltaY;            // molette en « lignes » sur certains navigateurs
+  setCam(cam.z * Math.exp(-dy * (e.ctrlKey ? 0.01 : 0.0015)), toCm(e), scr(e));
   schedule(2);
 }, { passive: false });
 
@@ -1191,8 +1418,8 @@ $('export').onclick = () => {
   const k = c.width / L.W, u = Math.max(1, k / 40);
   c.height = Math.max(1, Math.floor(L.H * k + 1e-6));
   const x = c.getContext('2d');
-  paintBase(x, k, u, L);
-  paintMarks(x, k, u, L, false);
+  paintSheet(x, k, u, L);
+  paintMarks(x, k, u, L, false, { x0: 0, y0: 0, x1: c.width, y1: c.height });
   c.toBlob(async blob => {
     if (!blob) return;
     const name = `ratio-${fmt(L.W)}x${fmt(L.H)}cm.png`.replace(/,/g, '.');
