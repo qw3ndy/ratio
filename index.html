@@ -46,7 +46,9 @@ section h2{
 .row{display:flex;gap:10px;align-items:flex-end}
 .row>*{flex:1;min-width:0}
 label.field{display:block;font-size:12px;color:var(--muted);white-space:nowrap}
-label.field i{font-style:normal;opacity:.7}
+label.field i,.mhead i{font-style:normal;opacity:.7}
+.mhead{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:2px;font-size:12px;color:var(--muted)}
+.link{border:0;background:none;padding:6px 0;color:var(--accent);cursor:pointer;font-size:12px;text-decoration:underline;text-underline-offset:2px}
 label.field input,select.full{
   display:block;width:100%;margin-top:4px;padding:8px 10px;
   background:var(--soft);border:1px solid transparent;border-radius:8px;color:var(--ink);
@@ -147,6 +149,7 @@ body.dragover .sheet{outline:3px solid var(--accent);outline-offset:4px}
     order:3;flex:none;display:block;border-right:0;
     max-height:236px;max-height:min(34dvh,236px);padding:6px 16px 16px;
   }
+  aside[data-tab=sheet]{max-height:280px;max-height:min(42dvh,330px)}
   /* onglet Repères : hauteur fixe et réduite, pour que la feuille reste grande et ne bouge pas quand la liste s'allonge */
   aside[data-tab=marks]{height:150px;height:min(24dvh,150px)}
   .app.closed aside{display:none}
@@ -160,6 +163,8 @@ body.dragover .sheet{outline:3px solid var(--accent);outline-offset:4px}
 @media (max-width:820px) and (orientation:landscape){
   .app{grid-template-columns:262px 1fr}
   aside{padding:14px 14px 20px;gap:18px}
+  #mSides{flex-wrap:wrap}
+  #mSides>*{flex:1 1 40%}
   .toolbar{padding:8px 12px}
   .status{padding:4px 12px;height:48px}
   .status span{white-space:normal}
@@ -169,6 +174,7 @@ body.dragover .sheet{outline:3px solid var(--accent);outline-offset:4px}
   input,select{font-size:16px}          /* évite le zoom automatique d'iOS à la saisie */
   .seg button{padding-top:10px;padding-bottom:10px}
   .btn{padding:10px 14px}
+  .link{padding:10px 0}
   .slider input{height:30px}
   .fine-only{display:none}
 }
@@ -206,7 +212,17 @@ body.dragover .sheet{outline:3px solid var(--accent);outline-offset:4px}
       <div class="row">
         <label class="field">Largeur <i>cm</i><input id="w" type="number" min="1" max="500" step="0.1" inputmode="decimal"></label>
         <label class="field">Hauteur <i>cm</i><input id="h" type="number" min="1" max="500" step="0.1" inputmode="decimal"></label>
-        <label class="field">Marge <i>cm</i><input id="m" type="number" min="0" max="50" step="0.5" inputmode="decimal"></label>
+        <label class="field" id="mField">Marge <i>cm</i><input id="m" type="number" min="0" max="50" step="0.5" inputmode="decimal"></label>
+      </div>
+      <div class="mhead">
+        <span id="mCap" hidden>Marges par côté <i>cm</i></span>
+        <button class="link" id="mToggle" type="button">Marges différentes par côté</button>
+      </div>
+      <div class="row" id="mSides" hidden>
+        <label class="field">Haut<input id="mt" type="number" min="0" max="50" step="0.5" inputmode="decimal"></label>
+        <label class="field">Bas<input id="mb" type="number" min="0" max="50" step="0.5" inputmode="decimal"></label>
+        <label class="field">Gauche<input id="ml" type="number" min="0" max="50" step="0.5" inputmode="decimal"></label>
+        <label class="field">Droite<input id="mr" type="number" min="0" max="50" step="0.5" inputmode="decimal"></label>
       </div>
       <div class="seg" id="orient" style="margin-top:12px" role="group" aria-label="Orientation">
         <button data-v="auto">Auto</button>
@@ -289,7 +305,9 @@ body.dragover .sheet{outline:3px solid var(--accent);outline-offset:4px}
 const $ = id => document.getElementById(id);
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 const fmt = (n, d = 1) => n.toLocaleString('fr-FR', { maximumFractionDigits: d });
-const cm = n => fmt(Math.abs(n) < 0.05 ? 0 : n) + ' cm';
+const num = n => fmt(Math.abs(n) < 0.05 ? 0 : n);
+const cm = n => num(n) + ' cm';
+const SIDES = ['mt', 'mb', 'ml', 'mr'];   // marges haut, bas, gauche, droite
 const mqCoarse = matchMedia('(pointer:coarse)'), coarse = () => mqCoarse.matches;
 const PAPER = '#fdfcf8', INK = '#e2500f';
 const MAX_SIDE = 4000;   // plus grand côté de la copie de travail et de l'export (limite des canvas sur mobile)
@@ -298,7 +316,9 @@ const rowName = j => (j >= 26 ? String.fromCharCode(64 + Math.floor(j / 26)) : '
 
 const st = {
   img: null, iw: 0, ih: 0,
-  w: 21, h: 29.7, m: 0,
+  w: 21, h: 29.7,
+  m: 0,             // marge unique…
+  split: false, mt: null, mb: null, ml: null, mr: null,   // …ou une marge par côté, feuille vue comme à l'écran
   orient: 'auto',   // auto | portrait | landscape
   mode: null,       // null = suivre le conseil | fit | cover
   zoom: 1, cx: 0, cy: 0,
@@ -311,9 +331,15 @@ const st = {
 const ui = { tab: 'photo', open: true };   // onglets de la version téléphone
 try {
   const s = JSON.parse(localStorage.getItem('ratio') || '{}');
-  for (const k of ['w', 'h', 'm', 'grid']) if (Number.isFinite(s[k])) st[k] = s[k];
+  const ok = (k, min) => Number.isFinite(s[k]) && s[k] >= min && s[k] <= 500;
+  for (const k of ['w', 'h']) if (ok(k, 1)) st[k] = s[k];
+  for (const k of ['m', ...SIDES]) if (ok(k, 0)) st[k] = s[k];
+  if (Number.isInteger(s.grid) && s.grid >= 0 && s.grid <= 16) st.grid = s.grid;
+  st.split = s.split === true && SIDES.every(k => st[k] != null);
 } catch {}
-const save = () => { try { localStorage.setItem('ratio', JSON.stringify({ w: st.w, h: st.h, m: st.m, grid: st.grid })); } catch {} };
+const save = () => {
+  try { localStorage.setItem('ratio', JSON.stringify({ w: st.w, h: st.h, m: st.m, grid: st.grid, split: st.split, mt: st.mt, mb: st.mb, ml: st.ml, mr: st.mr })); } catch {}
+};
 
 const cv = $('cv'), ctx = cv.getContext('2d'), sheet = $('sheet'), stage = $('stage');
 // La feuille (photo + grille) est peinte dans `base` ; l'écran y ajoute les repères, le survol et la loupe.
@@ -324,19 +350,30 @@ const ptrs = new Map();       // pointeurs posés sur la feuille → position (c
 const labelRects = [];        // étiquettes des repères à l'écran (pour les sélectionner)
 
 /* ---------- géométrie (tout en cm sur la feuille) ---------- */
-function layout() {
+// Feuille dans une orientation donnée et zone utile une fois les marges retirées.
+// Les marges se lisent sur la feuille telle qu'affichée ; elles sont réduites si elles ne laissent pas 1 cm de zone utile.
+function frame(o) {
   const long = Math.max(st.w, st.h), short = Math.min(st.w, st.h);
+  const W = o === 'landscape' ? long : short, H = o === 'landscape' ? short : long;
+  let t, b, l, r;
+  if (st.split) {
+    const fit = (a, c, size) => { const max = Math.max(0, size - 1), sum = a + c; return sum > max ? [a * max / sum, c * max / sum] : [a, c]; };
+    [l, r] = fit(st.ml, st.mr, W); [t, b] = fit(st.mt, st.mb, H);
+  } else t = b = l = r = clamp(st.m, 0, (short - 1) / 2);
+  return { W, H, A: { x: l, y: t, w: W - l - r, h: H - t - b }, hasMargin: t + b + l + r > 0 };
+}
+function layout() {
   const typed = st.w > st.h ? 'landscape' : 'portrait';
   let auto = typed;
   if (st.img) {
-    const r = st.iw / st.ih;
-    auto = r > 1.02 ? 'landscape' : r < 0.98 ? 'portrait' : typed;
+    // la bonne orientation est celle où la photo entière tient le plus grand, marges comprises
+    const size = o => { const f = frame(o); return Math.min(f.A.w / st.iw, f.A.h / st.ih); };
+    const sp = size('portrait'), sl = size('landscape');
+    auto = sl > sp * 1.02 ? 'landscape' : sp > sl * 1.02 ? 'portrait' : typed;
   }
   const o = st.orient === 'auto' ? auto : st.orient;
-  const W = o === 'landscape' ? long : short, H = o === 'landscape' ? short : long;
-  const m = clamp(st.m, 0, short / 2 - 0.5);
-  const A = { x: m, y: m, w: W - 2 * m, h: H - 2 * m };
-  const out = { W, H, m, A, o, auto, typed, rotated: o !== typed && long !== short };
+  const { W, H, A, hasMargin } = frame(o);
+  const out = { W, H, A, hasMargin, o, auto, typed, rotated: o !== typed && st.w !== st.h };
   if (!st.img) return { ...out, D: A, mode: st.mode || 'fit' };
 
   const ri = st.iw / st.ih, ra = A.w / A.h;
@@ -393,7 +430,7 @@ function paintBase(c, k, u, L) {
     c.imageSmoothingEnabled = true; c.imageSmoothingQuality = 'high';
     c.drawImage(st.img, L.src.x, L.src.y, L.src.w, L.src.h, px(D.x), px(D.y), px(D.w), px(D.h));
   }
-  if (L.m > 0) {
+  if (L.hasMargin) {
     c.save(); c.setLineDash([5 * u, 4 * u]); c.lineWidth = u; c.strokeStyle = 'rgba(0,0,0,.28)';
     c.strokeRect(px(L.A.x), px(L.A.y), px(L.A.w), px(L.A.h)); c.restore();
   }
@@ -608,8 +645,9 @@ function render() {
   if (has) {
     const D = L.D;
     rows.push(['Dessin', `${fmt(D.w)} × ${cm(D.h)}`]);
-    rows.push(['Bords gauche / droite', cm(D.x)]);
-    rows.push(['Bords haut / bas', cm(D.y)]);
+    const pair = (a, b) => Math.abs(a - b) < 0.05 ? cm(a) : `${num(a)} / ${cm(b)}`;
+    rows.push(['Bords gauche / droite', pair(D.x, L.W - D.x - D.w)]);
+    rows.push(['Bords haut / bas', pair(D.y, L.H - D.y - D.h)]);
     rows.push(['Image utilisée', Math.round(L.used * 100) + ' %']);
     if (st.grid) {
       const cell = D.w / st.grid, n = D.h / cell, full = Math.floor(n + 1e-6), rest = (n - full) * cell;
@@ -729,11 +767,24 @@ $('preset').onchange = e => {
   const [a, b] = e.target.value.split('x').map(Number);
   st.w = a; st.h = b; st.mode = null; $('w').value = a; $('h').value = b; save(); render();
 };
-for (const id of ['w', 'h', 'm']) $(id).oninput = e => {
-  const v = parseFloat(e.target.value);
-  if (!Number.isFinite(v) || v < (id === 'm' ? 0 : 1) || v > 500) return;
-  st[id] = v; if (id !== 'm') st.mode = null;
-  syncPreset(); save(); render();
+for (const id of ['w', 'h', 'm', ...SIDES]) $(id).oninput = e => {
+  const v = parseFloat(e.target.value), size = id === 'w' || id === 'h';
+  if (!Number.isFinite(v) || v < (size ? 1 : 0) || v > 500) return;
+  st[id] = v;
+  if (size) { st.mode = null; syncPreset(); }
+  save(); render();
+};
+// Marge unique ou une marge par côté : les deux réglages sont conservés, on bascule de l'un à l'autre.
+function syncMargins() {
+  $('mField').hidden = st.split; $('mSides').hidden = $('mCap').hidden = !st.split;
+  $('mToggle').textContent = st.split ? 'Marge unique' : 'Marges différentes par côté';
+  $('m').value = st.m;
+  for (const k of SIDES) $(k).value = st[k] ?? st.m;
+}
+$('mToggle').onclick = () => {
+  st.split = !st.split;
+  if (st.split) for (const k of SIDES) if (st[k] == null) st[k] = st.m;
+  syncMargins(); save(); render();
 };
 const group = (id, fn) => $(id).addEventListener('click', e => { const b = e.target.closest('button'); if (b) { fn(b.dataset.v); render(); } });
 const setTool = v => { st.tool = v; st.hover = null; if (v === 'move') st.sel = -1; };
@@ -921,7 +972,8 @@ $('export').onclick = () => {
 
 /* ---------- démarrage ---------- */
 if (coarse()) { $('dropT').textContent = 'Ajoutez votre photo'; $('dropS').textContent = 'touchez ici pour la choisir ou la prendre'; }
-$('w').value = st.w; $('h').value = st.h; $('m').value = st.m;
+$('w').value = st.w; $('h').value = st.h;
+syncMargins();
 syncPreset();
 new ResizeObserver(() => render()).observe(stage);
 render();
