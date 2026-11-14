@@ -1,0 +1,547 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ratio — proportions pour le dessin</title>
+<meta name="description" content="Placez une photo de référence sur votre feuille de dessin : orientation, cadrage, dimensions et mise au carreau.">
+<style>
+:root{
+  --bg:#f4f2ee; --panel:#ffffff; --ink:#1f1d1a; --muted:#6f6a62; --line:#e4e0d8;
+  --soft:#f3f0ea; --accent:#c2410c; --accent-soft:#fdebe1; --stage:#e7e3db; --paper:#fdfcf8;
+  --radius:12px;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --bg:#171614; --panel:#1f1e1b; --ink:#eeeae2; --muted:#9a948a; --line:#34322d;
+    --soft:#292723; --accent:#f08a4b; --accent-soft:#3a2416; --stage:#100f0e;
+  }
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{
+  background:var(--bg); color:var(--ink);
+  font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  -webkit-font-smoothing:antialiased;
+}
+button,input,select{font:inherit;color:inherit}
+.app{display:grid;grid-template-columns:340px 1fr;height:100vh;height:100dvh}
+
+/* ---------- panneau ---------- */
+aside{
+  background:var(--panel); border-right:1px solid var(--line);
+  overflow-y:auto; padding:20px 20px 28px; display:flex; flex-direction:column; gap:22px;
+}
+.brand{display:flex;align-items:baseline;gap:10px}
+.brand h1{font-size:20px;margin:0;letter-spacing:-.02em}
+.brand span{color:var(--muted);font-size:12.5px}
+section h2{
+  font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);
+  margin:0 0 10px;font-weight:600;
+}
+.row{display:flex;gap:10px}
+.row>*{flex:1;min-width:0}
+label.field{display:block;font-size:12px;color:var(--muted)}
+label.field input,label.field select,select.full{
+  display:block;width:100%;margin-top:4px;padding:8px 10px;
+  background:var(--soft);border:1px solid transparent;border-radius:8px;color:var(--ink);
+}
+select.full{margin:0 0 10px}
+input:focus-visible,select:focus-visible,button:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.seg{display:flex;background:var(--soft);border-radius:9px;padding:3px;gap:2px}
+.seg button{
+  flex:1;border:0;background:transparent;padding:7px 6px;border-radius:7px;cursor:pointer;
+  color:var(--muted);white-space:nowrap;position:relative;
+}
+.seg button[aria-pressed=true]{background:var(--panel);color:var(--ink);box-shadow:0 1px 2px rgba(0,0,0,.14);font-weight:600}
+.seg button.rec::after{
+  content:"";position:absolute;top:5px;right:6px;width:6px;height:6px;border-radius:50%;background:var(--accent);
+}
+.btn{
+  border:1px solid var(--line);background:var(--panel);padding:8px 14px;border-radius:9px;cursor:pointer;
+}
+.btn:hover{background:var(--soft)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+.btn.primary:hover{filter:brightness(1.07);background:var(--accent)}
+.btn:disabled{opacity:.45;cursor:default}
+.photo{display:flex;align-items:center;gap:12px}
+.photo img{width:54px;height:54px;object-fit:cover;border-radius:8px;background:var(--soft);display:none}
+.photo .meta{font-size:12px;color:var(--muted);min-width:0;flex:1}
+.photo .meta b{display:block;color:var(--ink);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hint{font-size:12px;color:var(--muted);margin:8px 0 0}
+.advice{
+  margin-top:10px;padding:10px 12px;border-radius:10px;background:var(--accent-soft);
+  font-size:12.5px;line-height:1.45;
+}
+.advice b{color:var(--accent)}
+.slider{display:flex;align-items:center;gap:10px;margin-top:12px;font-size:12px;color:var(--muted)}
+.slider input{flex:1;accent-color:var(--accent);min-width:0}
+.slider output{min-width:64px;text-align:right;color:var(--ink);font-variant-numeric:tabular-nums}
+dl{margin:0;display:grid;grid-template-columns:auto 1fr;gap:7px 14px;font-size:13px}
+dt{color:var(--muted)}
+dd{margin:0;text-align:right;font-variant-numeric:tabular-nums;font-weight:500}
+dd small{display:block;color:var(--muted);font-weight:400;font-size:11.5px}
+[hidden]{display:none!important}
+
+/* ---------- scène ---------- */
+main{display:flex;flex-direction:column;min-width:0;min-height:0;background:var(--stage)}
+.toolbar{display:flex;align-items:center;gap:10px;padding:12px 16px;flex-wrap:wrap}
+.toolbar .seg{background:var(--panel)}
+.toolbar .seg button[aria-pressed=true]{background:var(--soft);box-shadow:none}
+.toolbar .spacer{flex:1}
+.stage{flex:1;min-height:0;position:relative;overflow:hidden;display:grid;place-items:center}
+.sheet{position:relative;box-shadow:0 1px 2px rgba(0,0,0,.18),0 14px 40px rgba(0,0,0,.22);background:var(--paper)}
+.sheet canvas{display:block;width:100%;height:100%;touch-action:none}
+.dim{position:absolute;font-size:11.5px;color:var(--muted);white-space:nowrap;font-variant-numeric:tabular-nums}
+.dim.w{left:50%;top:-24px;transform:translateX(-50%)}
+.dim.h{left:-14px;top:50%;transform:translate(-50%,-50%) rotate(-90deg)}
+.drop{
+  position:absolute;inset:0;display:grid;place-items:center;text-align:center;cursor:pointer;
+  color:#6f6a62;padding:16px;border:0;background:transparent;width:100%;
+}
+.drop div{border:1.5px dashed #c9c3b8;border-radius:12px;padding:22px 18px;max-width:260px}
+.drop strong{display:block;color:#1f1d1a;font-size:15px;margin-bottom:4px}
+.status{
+  padding:9px 16px;font-size:12.5px;color:var(--muted);min-height:38px;
+  font-variant-numeric:tabular-nums;display:flex;gap:16px;flex-wrap:wrap;
+}
+.status b{color:var(--ink);font-weight:600}
+body.dragover .sheet{outline:3px solid var(--accent);outline-offset:4px}
+
+@media (max-width:820px){
+  .app{display:block;height:auto}
+  aside{border-right:0;border-top:1px solid var(--line)}
+  main{height:72vh;height:72dvh;position:sticky;top:0;z-index:1}
+  .app{display:flex;flex-direction:column}
+  main{order:-1;position:static}
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside>
+    <div class="brand"><h1>Ratio</h1><span>de la photo à la feuille</span></div>
+
+    <section>
+      <h2>1 · Photo de référence</h2>
+      <div class="photo">
+        <img id="thumb" alt="">
+        <div class="meta" id="photoMeta">Aucune photo</div>
+        <button class="btn" id="pick">Choisir…</button>
+      </div>
+      <input type="file" id="file" accept="image/*" hidden>
+      <p class="hint">Vous pouvez aussi glisser-déposer ou coller (Ctrl+V) une image. Rien n'est envoyé : tout reste dans votre navigateur.</p>
+    </section>
+
+    <section>
+      <h2>2 · Feuille</h2>
+      <select id="preset" class="full" aria-label="Format de feuille">
+        <option value="14.8x21">A5 — 14,8 × 21 cm</option>
+        <option value="21x29.7">A4 — 21 × 29,7 cm</option>
+        <option value="29.7x42">A3 — 29,7 × 42 cm</option>
+        <option value="42x59.4">A2 — 42 × 59,4 cm</option>
+        <option value="24x32">24 × 32 cm</option>
+        <option value="30x40">30 × 40 cm</option>
+        <option value="50x65">Raisin — 50 × 65 cm</option>
+        <option value="custom">Personnalisé</option>
+      </select>
+      <div class="row">
+        <label class="field">Largeur (cm)<input id="w" type="number" min="1" max="500" step="0.1" inputmode="decimal"></label>
+        <label class="field">Hauteur (cm)<input id="h" type="number" min="1" max="500" step="0.1" inputmode="decimal"></label>
+        <label class="field">Marge (cm)<input id="m" type="number" min="0" max="50" step="0.5" inputmode="decimal"></label>
+      </div>
+      <div class="seg" id="orient" style="margin-top:12px" role="group" aria-label="Orientation">
+        <button data-v="auto">Auto</button>
+        <button data-v="portrait">Portrait</button>
+        <button data-v="landscape">Paysage</button>
+      </div>
+      <p class="hint" id="orientHint"></p>
+    </section>
+
+    <section>
+      <h2>3 · Cadrage</h2>
+      <div class="seg" id="mode" role="group" aria-label="Cadrage">
+        <button data-v="fit">Image entière</button>
+        <button data-v="cover">Remplir la feuille</button>
+      </div>
+      <div class="advice" id="advice">Ajoutez une photo pour obtenir un conseil de cadrage.</div>
+      <div class="slider" id="zoomRow" hidden>
+        <span>Zoom</span>
+        <input id="zoom" type="range" min="1" max="4" step="0.01" value="1">
+        <output id="zoomOut">× 1</output>
+      </div>
+    </section>
+
+    <section>
+      <h2>4 · Mise au carreau</h2>
+      <div class="slider" style="margin-top:0">
+        <span>Colonnes</span>
+        <input id="grid" type="range" min="0" max="16" step="1" value="0">
+        <output id="gridOut">Aucune</output>
+      </div>
+      <p class="hint" id="gridHint">Tracez la même grille sur votre feuille pour reporter les proportions case par case.</p>
+    </section>
+
+    <section>
+      <h2>Sur votre feuille</h2>
+      <dl id="result"></dl>
+    </section>
+  </aside>
+
+  <main>
+    <div class="toolbar">
+      <div class="seg" id="tool" role="group" aria-label="Outil">
+        <button data-v="move">Déplacer</button>
+        <button data-v="measure">Mesurer</button>
+      </div>
+      <span class="spacer"></span>
+      <button class="btn primary" id="export" disabled>Télécharger le repère</button>
+    </div>
+    <div class="stage" id="stage">
+      <div class="sheet" id="sheet">
+        <canvas id="cv"></canvas>
+        <span class="dim w" id="dimW"></span>
+        <span class="dim h" id="dimH"></span>
+        <button class="drop" id="drop"><div><strong>Déposez votre photo ici</strong>ou cliquez pour la choisir</div></button>
+      </div>
+    </div>
+    <div class="status" id="status"></div>
+  </main>
+</div>
+
+<script>
+(() => {
+'use strict';
+const $ = id => document.getElementById(id);
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+const fmt = (n, d = 1) => n.toLocaleString('fr-FR', { maximumFractionDigits: d });
+const cm = n => fmt(n) + ' cm';
+const PAPER = '#fdfcf8', INK = '#e2500f';
+
+const st = {
+  img: null, iw: 0, ih: 0, name: '',
+  w: 21, h: 29.7, m: 0,
+  orient: 'auto',   // auto | portrait | landscape
+  mode: null,       // null = suivre le conseil | fit | cover
+  zoom: 1, cx: 0, cy: 0,
+  grid: 0, tool: 'move',
+  hover: null, meas: null,
+};
+try {
+  const s = JSON.parse(localStorage.getItem('ratio') || '{}');
+  for (const k of ['w', 'h', 'm', 'grid']) if (Number.isFinite(s[k])) st[k] = s[k];
+} catch {}
+const save = () => { try { localStorage.setItem('ratio', JSON.stringify({ w: st.w, h: st.h, m: st.m, grid: st.grid })); } catch {} };
+
+const cv = $('cv'), ctx = cv.getContext('2d'), sheet = $('sheet'), stage = $('stage');
+let L = null, view = { k: 1, u: 1 };
+
+/* ---------- géométrie (tout en cm sur la feuille) ---------- */
+function layout() {
+  const long = Math.max(st.w, st.h), short = Math.min(st.w, st.h);
+  const typed = st.w > st.h ? 'landscape' : 'portrait';
+  let auto = typed;
+  if (st.img) {
+    const r = st.iw / st.ih;
+    auto = r > 1.02 ? 'landscape' : r < 0.98 ? 'portrait' : typed;
+  }
+  const o = st.orient === 'auto' ? auto : st.orient;
+  const W = o === 'landscape' ? long : short, H = o === 'landscape' ? short : long;
+  const m = clamp(st.m, 0, short / 2 - 0.5);
+  const A = { x: m, y: m, w: W - 2 * m, h: H - 2 * m };
+  const out = { W, H, m, A, o, auto, typed, rotated: o !== typed && long !== short };
+  if (!st.img) return { ...out, D: A, mode: st.mode || 'fit' };
+
+  const ri = st.iw / st.ih, ra = A.w / A.h;
+  const loss = 1 - Math.min(ri / ra, ra / ri);          // part d'image coupée = part de feuille vide
+  const rec = loss <= 0.15 ? 'cover' : 'fit';
+  const mode = st.mode || rec;
+  const wider = ri > ra;                                 // l'image est plus allongée que la feuille
+  let D, src, s;
+  if (mode === 'fit') {
+    s = Math.min(A.w / st.iw, A.h / st.ih);
+    const dw = st.iw * s, dh = st.ih * s;
+    D = { x: A.x + (A.w - dw) / 2, y: A.y + (A.h - dh) / 2, w: dw, h: dh };
+    src = { x: 0, y: 0, w: st.iw, h: st.ih };
+  } else {
+    s = Math.max(A.w / st.iw, A.h / st.ih) * st.zoom;
+    const vw = A.w / s, vh = A.h / s;
+    st.cx = clamp(st.cx, vw / 2, st.iw - vw / 2);
+    st.cy = clamp(st.cy, vh / 2, st.ih - vh / 2);
+    D = A;
+    src = { x: st.cx - vw / 2, y: st.cy - vh / 2, w: vw, h: vh };
+  }
+  return { ...out, D, src, s, mode, rec, loss, wider, used: (src.w * src.h) / (st.iw * st.ih) };
+}
+
+/* ---------- dessin (écran et export partagent ce code) ---------- */
+function paint(c, k, u, L, overlay) {
+  const px = v => v * k;
+  c.setTransform(1, 0, 0, 1, 0, 0);
+  c.fillStyle = PAPER;
+  c.fillRect(0, 0, px(L.W), px(L.H));
+  const D = L.D;
+
+  if (st.img) {
+    c.imageSmoothingEnabled = true; c.imageSmoothingQuality = 'high';
+    c.drawImage(st.img, L.src.x, L.src.y, L.src.w, L.src.h, px(D.x), px(D.y), px(D.w), px(D.h));
+  }
+  if (L.m > 0) {
+    c.save(); c.setLineDash([5 * u, 4 * u]); c.lineWidth = u; c.strokeStyle = 'rgba(0,0,0,.28)';
+    c.strokeRect(px(L.A.x), px(L.A.y), px(L.A.w), px(L.A.h)); c.restore();
+  }
+  if (st.img) {
+    c.lineWidth = u; c.strokeStyle = 'rgba(0,0,0,.45)';
+    c.strokeRect(px(D.x), px(D.y), px(D.w), px(D.h));
+  }
+
+  if (st.grid > 0 && st.img) {
+    const cell = D.w / st.grid, rows = Math.ceil(D.h / cell - 1e-6);
+    const lines = () => {
+      c.beginPath();
+      for (let i = 1; i < st.grid; i++) { const x = px(D.x + i * cell); c.moveTo(x, px(D.y)); c.lineTo(x, px(D.y + D.h)); }
+      for (let j = 1; j < rows; j++) { const y = px(D.y + j * cell); c.moveTo(px(D.x), y); c.lineTo(px(D.x + D.w), y); }
+      c.stroke();
+    };
+    c.lineWidth = 2.6 * u; c.strokeStyle = 'rgba(255,255,255,.55)'; lines();
+    c.lineWidth = 1 * u; c.strokeStyle = 'rgba(20,20,20,.75)'; lines();
+    if (px(cell) > 26 * u) {
+      c.font = `600 ${10.5 * u}px system-ui,sans-serif`; c.textBaseline = 'top';
+      const tag = (t, x, y) => {
+        c.lineWidth = 3 * u; c.strokeStyle = 'rgba(255,255,255,.85)'; c.lineJoin = 'round';
+        c.strokeText(t, x, y); c.fillStyle = 'rgba(20,20,20,.9)'; c.fillText(t, x, y);
+      };
+      c.textAlign = 'left';
+      for (let i = 0; i < st.grid; i++) tag(String(i + 1), px(D.x + i * cell) + 4 * u, px(D.y) + 4 * u);
+      for (let j = 1; j < rows; j++) tag(String.fromCharCode(65 + (j % 26)), px(D.x) + 4 * u, px(D.y + j * cell) + 4 * u);
+    }
+  }
+
+  if (!overlay) return;
+  const halo = draw => {
+    c.lineWidth = 3.5 * u; c.strokeStyle = 'rgba(255,255,255,.8)'; draw();
+    c.lineWidth = 1.5 * u; c.strokeStyle = INK; draw();
+  };
+  if (st.tool === 'measure' && st.hover && !st.meas?.drag) {
+    const { x, y } = st.hover;
+    c.save(); c.setLineDash([4 * u, 4 * u]);
+    halo(() => { c.beginPath(); c.moveTo(px(x), 0); c.lineTo(px(x), px(L.H)); c.moveTo(0, px(y)); c.lineTo(px(L.W), px(y)); c.stroke(); });
+    c.restore();
+  }
+  if (st.meas) {
+    const { a, b } = st.meas;
+    halo(() => { c.beginPath(); c.moveTo(px(a.x), px(a.y)); c.lineTo(px(b.x), px(b.y)); c.stroke(); });
+    for (const p of [a, b]) {
+      c.beginPath(); c.arc(px(p.x), px(p.y), 4 * u, 0, 7);
+      c.fillStyle = '#fff'; c.fill(); c.lineWidth = 1.5 * u; c.strokeStyle = INK; c.stroke();
+    }
+    const d = Math.hypot(b.x - a.x, b.y - a.y);
+    if (d > 0.05) {
+      const t = cm(d);
+      c.font = `600 ${12 * u}px system-ui,sans-serif`; c.textAlign = 'center'; c.textBaseline = 'middle';
+      const tw = c.measureText(t).width + 14 * u, th = 22 * u;
+      const mx = clamp(px((a.x + b.x) / 2), tw / 2 + 2, px(L.W) - tw / 2 - 2);
+      const my = clamp(px((a.y + b.y) / 2) - 18 * u, th / 2 + 2, px(L.H) - th / 2 - 2);
+      c.fillStyle = INK; c.beginPath(); c.roundRect(mx - tw / 2, my - th / 2, tw, th, th / 2); c.fill();
+      c.fillStyle = '#fff'; c.fillText(t, mx, my + u * 0.5);
+    }
+  }
+}
+
+function fitCanvas() {
+  const r = stage.getBoundingClientRect(), pad = 40;
+  const s = Math.min(Math.max(120, r.width - pad * 2) / L.W, Math.max(120, r.height - pad * 2) / L.H);
+  const cw = Math.round(L.W * s), ch = Math.round(L.H * s);
+  sheet.style.width = cw + 'px'; sheet.style.height = ch + 'px';
+  const dpr = window.devicePixelRatio || 1;
+  const pw = Math.round(cw * dpr), ph = Math.round(ch * dpr);
+  if (cv.width !== pw || cv.height !== ph) { cv.width = pw; cv.height = ph; }
+  view = { k: pw / L.W, u: dpr };
+}
+function repaint() { paint(ctx, view.k, view.u, L, true); status(); }
+
+/* ---------- interface ---------- */
+function press(groupId, value, recValue) {
+  for (const b of $(groupId).children) {
+    b.setAttribute('aria-pressed', b.dataset.v === value);
+    b.classList.toggle('rec', recValue != null && b.dataset.v === recValue);
+  }
+}
+const oName = o => o === 'landscape' ? 'paysage' : 'portrait';
+
+function render() {
+  L = layout();
+  fitCanvas();
+  const has = !!st.img;
+
+  $('dimW').textContent = cm(L.W); $('dimH').textContent = cm(L.H);
+  $('drop').hidden = has; $('export').disabled = !has;
+  press('orient', st.orient); press('tool', st.tool);
+  press('mode', L.mode, has ? L.rec : null);
+  cv.style.cursor = st.tool === 'measure' ? 'crosshair' : (has && L.mode === 'cover' ? 'grab' : 'default');
+
+  // orientation
+  let oh = '';
+  if (st.w === st.h) oh = 'Feuille carrée : l\'orientation ne change rien.';
+  else if (st.orient === 'auto') oh = has
+    ? `Orientation détectée : <b>${oName(L.o)}</b>${L.rotated ? ' — tournez votre feuille.' : '.'}`
+    : 'L\'orientation sera choisie d\'après la photo.';
+  else if (has && L.o !== L.auto) oh = `Cette photo se prête mieux au format ${oName(L.auto)}.`;
+  $('orientHint').innerHTML = oh;
+
+  // conseil de cadrage
+  $('zoomRow').hidden = !(has && L.mode === 'cover');
+  $('zoom').value = st.zoom; $('zoomOut').textContent = '× ' + fmt(st.zoom, 2);
+  if (has) {
+    const pct = Math.max(1, Math.round(L.loss * 100));
+    const sides = L.wider ? 'à gauche et à droite' : 'en haut et en bas';
+    // recadrer coupe sur un axe ; garder l'image entière laisse du vide sur l'autre
+    const empty = L.wider ? 'en haut et en bas' : 'à gauche et à droite';
+    const band = L.wider ? (L.A.h - L.A.w * st.ih / st.iw) / 2 : (L.A.w - L.A.h * st.iw / st.ih) / 2;
+    let a;
+    if (L.loss < 0.02) a = '<b>Proportions identiques.</b> La photo occupe toute la feuille, sans recadrage notable.';
+    else if (L.rec === 'cover') a = `<b>Recadrage léger conseillé.</b> En retirant environ ${pct} % de l'image ${sides}, le dessin remplit toute la feuille. Sinon, il resterait ${cm(band)} de vide ${empty}.`;
+    else a = `<b>Image entière conseillée.</b> Les formats sont assez différents : remplir la feuille couperait ${pct} % de l'image. En la gardant entière, il reste ${cm(band)} de vide ${empty}.`;
+    if (L.mode === 'cover' && L.loss >= 0.02) a += ' Faites glisser l\'image pour choisir la zone conservée.';
+    $('advice').innerHTML = a;
+  }
+
+  // grille
+  $('grid').value = st.grid;
+  $('gridOut').textContent = st.grid ? st.grid + ' col.' : 'Aucune';
+
+  // résultat
+  const rows = [['Feuille', `${fmt(L.W)} × ${cm(L.H)}<small>${st.w === st.h ? 'carrée' : oName(L.o)}${L.rotated ? ' · feuille tournée' : ''}</small>`]];
+  if (has) {
+    const D = L.D;
+    rows.push(['Dessin', `${fmt(D.w)} × ${cm(D.h)}`]);
+    rows.push(['Bords gauche / droite', cm(D.x)]);
+    rows.push(['Bords haut / bas', cm(D.y)]);
+    rows.push(['Image utilisée', Math.round(L.used * 100) + ' %']);
+    if (st.grid) {
+      const cell = D.w / st.grid, n = D.h / cell, full = Math.floor(n + 1e-6), rest = (n - full) * cell;
+      rows.push(['Carreaux', `${cm(cell)} de côté<small>${st.grid} colonnes × ${full} rangées${rest > 0.05 ? ' + ' + cm(rest) : ''}</small>`]);
+    }
+  }
+  $('result').innerHTML = rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('');
+  repaint();
+}
+
+function status() {
+  const el = $('status');
+  if (!st.img) { el.textContent = 'Commencez par ajouter une photo de référence.'; return; }
+  const parts = [];
+  if (st.tool === 'measure') {
+    if (st.meas) {
+      const { a, b } = st.meas;
+      parts.push(`Distance <b>${cm(Math.hypot(b.x - a.x, b.y - a.y))}</b>`, `↔ ${cm(Math.abs(b.x - a.x))}`, `↕ ${cm(Math.abs(b.y - a.y))}`);
+    }
+    if (st.hover) parts.push(`Depuis le bord gauche <b>${cm(st.hover.x)}</b>`, `depuis le haut <b>${cm(st.hover.y)}</b>`);
+    if (!parts.length) parts.push('Survolez la feuille pour lire une position, cliquez-glissez pour mesurer une distance réelle sur le papier.');
+  } else if (L.mode === 'cover') parts.push('Faites glisser l\'image pour la recadrer, molette pour zoomer.');
+  else parts.push('L\'image est entière et centrée sur la feuille.');
+  el.innerHTML = parts.map(p => `<span>${p}</span>`).join('');
+}
+
+/* ---------- photo ---------- */
+function load(file) {
+  if (!file || !file.type.startsWith('image/')) return;
+  const url = URL.createObjectURL(file), img = new Image();
+  img.onload = () => {
+    Object.assign(st, { img, iw: img.naturalWidth, ih: img.naturalHeight, name: file.name || 'Image collée',
+      zoom: 1, cx: img.naturalWidth / 2, cy: img.naturalHeight / 2, mode: null, meas: null });
+    $('thumb').src = url; $('thumb').style.display = 'block';
+    $('photoMeta').innerHTML = `<b></b>${st.iw} × ${st.ih} px`;
+    $('photoMeta').firstChild.textContent = st.name;
+    $('pick').textContent = 'Changer';
+    render();
+  };
+  img.onerror = () => { URL.revokeObjectURL(url); $('photoMeta').textContent = 'Format d\'image non pris en charge par ce navigateur.'; };
+  img.src = url;
+}
+$('pick').onclick = $('drop').onclick = () => $('file').click();
+$('file').onchange = e => { load(e.target.files[0]); e.target.value = ''; };
+addEventListener('paste', e => { const f = [...(e.clipboardData?.files || [])][0]; if (f) load(f); });
+addEventListener('dragover', e => { e.preventDefault(); document.body.classList.add('dragover'); });
+addEventListener('dragleave', e => { if (!e.relatedTarget) document.body.classList.remove('dragover'); });
+addEventListener('drop', e => { e.preventDefault(); document.body.classList.remove('dragover'); load(e.dataTransfer.files[0]); });
+
+/* ---------- feuille ---------- */
+function syncSheetInputs() {
+  $('w').value = st.w; $('h').value = st.h; $('m').value = st.m;
+  const key = [Math.min(st.w, st.h), Math.max(st.w, st.h)].join('x');
+  $('preset').value = [...$('preset').options].some(o => o.value === key) ? key : 'custom';
+}
+$('preset').onchange = e => {
+  if (e.target.value === 'custom') return;
+  const [a, b] = e.target.value.split('x').map(Number);
+  st.w = a; st.h = b; st.mode = null; syncSheetInputs(); save(); render();
+};
+for (const id of ['w', 'h', 'm']) $(id).oninput = e => {
+  const v = parseFloat(e.target.value);
+  if (!Number.isFinite(v) || v < (id === 'm' ? 0 : 1) || v > 500) return;
+  st[id] = v; if (id !== 'm') st.mode = null;
+  const key = [Math.min(st.w, st.h), Math.max(st.w, st.h)].join('x');
+  $('preset').value = [...$('preset').options].some(o => o.value === key) ? key : 'custom';
+  save(); render();
+};
+const group = (id, fn) => $(id).addEventListener('click', e => { const b = e.target.closest('button'); if (b) { fn(b.dataset.v); render(); } });
+group('orient', v => { st.orient = v; st.mode = null; });
+group('mode', v => { st.mode = v; });
+group('tool', v => { st.tool = v; st.hover = null; if (v === 'move') st.meas = null; });
+$('zoom').oninput = e => { st.zoom = +e.target.value; render(); };
+$('grid').oninput = e => { st.grid = +e.target.value; save(); render(); };
+
+/* ---------- pointeur ---------- */
+const toCm = e => { const r = cv.getBoundingClientRect(); return { x: clamp((e.clientX - r.left) / r.width * L.W, 0, L.W), y: clamp((e.clientY - r.top) / r.height * L.H, 0, L.H) }; };
+let pan = null;
+cv.addEventListener('pointerdown', e => {
+  if (!st.img) return;
+  cv.setPointerCapture(e.pointerId);
+  const p = toCm(e);
+  if (st.tool === 'measure') { st.meas = { a: p, b: p, drag: true }; repaint(); }
+  else if (L.mode === 'cover') { pan = { p, cx: st.cx, cy: st.cy }; cv.style.cursor = 'grabbing'; }
+});
+cv.addEventListener('pointermove', e => {
+  if (!st.img) return;
+  const p = toCm(e);
+  if (st.tool === 'measure') {
+    st.hover = p;
+    if (st.meas?.drag) st.meas.b = p;
+    repaint();
+  } else if (pan) {
+    st.cx = pan.cx - (p.x - pan.p.x) / L.s; st.cy = pan.cy - (p.y - pan.p.y) / L.s;
+    render();
+  }
+});
+const end = () => {
+  if (st.meas?.drag) { st.meas.drag = false; if (Math.hypot(st.meas.b.x - st.meas.a.x, st.meas.b.y - st.meas.a.y) < 0.05) st.meas = null; repaint(); }
+  if (pan) { pan = null; render(); }
+};
+cv.addEventListener('pointerup', end); cv.addEventListener('pointercancel', end);
+cv.addEventListener('pointerleave', () => { if (st.hover) { st.hover = null; repaint(); } });
+cv.addEventListener('wheel', e => {
+  if (!st.img || L.mode !== 'cover') return;
+  e.preventDefault();
+  st.zoom = clamp(st.zoom * Math.exp(-e.deltaY * 0.0015), 1, 4); render();
+}, { passive: false });
+
+/* ---------- export ---------- */
+$('export').onclick = () => {
+  const k = Math.min(120, 4096 / Math.max(L.W, L.H)), c = document.createElement('canvas');
+  c.width = Math.round(L.W * k); c.height = Math.round(L.H * k);
+  paint(c.getContext('2d'), k, Math.max(1, k / 40), L, false);
+  c.toBlob(b => {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(b); a.download = `ratio-${fmt(L.W)}x${fmt(L.H)}cm.png`.replace(/,/g, '.');
+    a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  }, 'image/png');
+};
+
+new ResizeObserver(() => render()).observe(stage);
+syncSheetInputs();
+render();
+})();
+</script>
+</body>
+</html>
