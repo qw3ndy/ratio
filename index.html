@@ -74,6 +74,7 @@ input:focus-visible,select:focus-visible,button:focus-visible{outline:2px solid 
 .photo .meta{font-size:12px;color:var(--muted);min-width:0;flex:1}
 .photo .meta b,.photo .meta span{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .photo .meta b{color:var(--ink);font-weight:600}
+.acts{display:flex;align-items:center;flex-wrap:wrap;gap:2px 14px;margin-top:10px}
 .hint{font-size:12px;color:var(--muted);margin:8px 0 0}
 .hint.err{color:var(--accent)}
 .advice{margin-top:10px;padding:10px 12px;border-radius:10px;background:var(--accent-soft);font-size:12.5px;line-height:1.45}
@@ -107,12 +108,16 @@ main{display:flex;flex-direction:column;min-width:0;min-height:0;background:var(
 .toolbar .seg button{padding-left:12px;padding-right:12px}
 .toolbar .seg button[aria-pressed=true]{background:var(--soft);box-shadow:none}
 .toolbar .spacer{flex:1}
+.tools{display:flex;align-items:center;gap:10px;flex:1;min-width:0}
 .stage{
   flex:1;min-height:0;position:relative;overflow:hidden;display:grid;place-items:center;
   -webkit-user-select:none;user-select:none;-webkit-touch-callout:none;
 }
 .sheet{position:relative;box-shadow:0 1px 2px rgba(0,0,0,.18),0 14px 40px rgba(0,0,0,.22);background:var(--paper)}
 .sheet canvas{display:block;width:100%;height:100%;touch-action:none;-webkit-touch-callout:none}
+/* rognage : la photo entière remplace la feuille, entourée d'une marge pour saisir les poignées des bords */
+.sheet.cropping{background:transparent;box-shadow:none}
+.sheet.cropping .dim{display:none}
 .dim{position:absolute;font-size:11.5px;color:var(--muted);white-space:nowrap;font-variant-numeric:tabular-nums}
 .dim.w{left:50%;top:-22px;transform:translateX(-50%)}
 .dim.h{left:-13px;top:50%;transform:translate(-50%,-50%) rotate(-90deg)}
@@ -192,6 +197,10 @@ body.dragover .sheet{outline:3px solid var(--accent);outline-offset:4px}
         <div class="meta" id="photoMeta">Aucune photo</div>
         <button class="btn" id="pick">Choisir…</button>
       </div>
+      <div class="acts" id="photoActs" hidden>
+        <button class="btn" id="cropOpen" type="button">Rogner la photo</button>
+        <button class="link" id="cropClear" type="button" hidden>Rétablir la photo entière</button>
+      </div>
       <input type="file" id="file" accept="image/*" hidden>
       <p class="hint err" id="photoErr" hidden></p>
       <p class="hint"><span class="fine-only">Vous pouvez aussi glisser-déposer ou coller (Ctrl+V) une image. </span>Rien n'est envoyé : la photo reste dans votre navigateur.</p>
@@ -244,6 +253,9 @@ body.dragover .sheet{outline:3px solid var(--accent);outline-offset:4px}
         <input id="zoom" type="range" min="1" max="4" step="0.01" value="1" aria-label="Zoom">
         <output id="zoomOut">× 1</output>
       </div>
+      <div class="acts" id="cropActs" hidden>
+        <button class="link" id="cropOpen2" type="button">Rogner la photo d'origine</button>
+      </div>
     </section>
 
     <section data-tab="grid">
@@ -280,12 +292,20 @@ body.dragover .sheet{outline:3px solid var(--accent);outline-offset:4px}
 
   <main>
     <div class="toolbar">
-      <div class="seg" id="tool" role="group" aria-label="Outil">
-        <button data-v="move">Déplacer</button>
-        <button data-v="mark">Repères</button>
+      <div class="tools" id="tools">
+        <div class="seg" id="tool" role="group" aria-label="Outil">
+          <button data-v="move">Déplacer</button>
+          <button data-v="mark">Repères</button>
+        </div>
+        <span class="spacer"></span>
+        <button class="btn primary" id="export" disabled title="Image de la feuille avec le cadrage, la grille et les repères">Exporter<span class="wide-only"> l'image</span></button>
       </div>
-      <span class="spacer"></span>
-      <button class="btn primary" id="export" disabled title="Image de la feuille avec le cadrage, la grille et les repères">Exporter<span class="wide-only"> l'image</span></button>
+      <div class="tools" id="cropTools" hidden>
+        <button class="btn" id="cropReset" type="button">Tout garder</button>
+        <span class="spacer"></span>
+        <button class="btn" id="cropCancel" type="button">Annuler</button>
+        <button class="btn primary" id="cropApply" type="button">Valider</button>
+      </div>
     </div>
     <div class="stage" id="stage">
       <div class="sheet" id="sheet">
@@ -315,7 +335,10 @@ const MAX_ZOOM = 4;
 const rowName = j => (j >= 26 ? String.fromCharCode(64 + Math.floor(j / 26)) : '') + String.fromCharCode(65 + j % 26);
 
 const st = {
-  img: null, iw: 0, ih: 0,
+  img: null,        // copie de travail de la photo entière
+  crop: null,       // zone gardée de la photo { x, y, w, h } : c'est « l'image » pour tout le reste
+  iw: 0, ih: 0,     // taille de cette image (= taille de la zone gardée)
+  orig: null,       // { name, w, h, f } : nom et taille du fichier, échelle de la copie de travail
   w: 21, h: 29.7,
   m: 0,             // marge unique…
   split: false, mt: null, mb: null, ml: null, mr: null,   // …ou une marge par côté, feuille vue comme à l'écran
@@ -324,11 +347,14 @@ const st = {
   zoom: 1, cx: 0, cy: 0,
   grid: 0,
   tool: 'move',     // move | mark
-  marks: [],        // repères de distance : { a:{x,y}, b:{x,y} } en pixels de la photo
+  marks: [],        // repères de distance : { a:{x,y}, b:{x,y} } en pixels de l'image
   sel: -1,          // repère sélectionné
   hover: null,      // position de la souris sur la feuille (cm)
 };
-const ui = { tab: 'photo', open: true };   // onglets de la version téléphone
+const ui = {
+  tab: 'photo', open: true,     // onglets de la version téléphone
+  crop: null, reopen: true,     // cadre en cours de réglage pendant le rognage (pixels de la photo entière)
+};
 try {
   const s = JSON.parse(localStorage.getItem('ratio') || '{}');
   const ok = (k, min) => Number.isFinite(s[k]) && s[k] >= min && s[k] <= 500;
@@ -419,13 +445,14 @@ function pill(c, x, y, w, h) {
   c.lineTo(x + r, y + h); c.arc(x + r, y + r, r, Math.PI / 2, Math.PI * 1.5); c.closePath();
 }
 
-// drawImage dont la zone source peut dépasser de la photo. Les navigateurs ne traitent pas ce cas de la
-// même façon (certains décalent ou n'affichent rien) : on rogne nous-mêmes la source et la destination.
-function drawClipped(c, img, sx, sy, sw, sh, dx, dy, dw, dh) {
+// Dessine une zone de l'image (coordonnées en pixels de l'image, c'est-à-dire de la zone gardée de la photo).
+// Ce qui dépasse de l'image n'est pas dessiné : on rogne nous-mêmes la source et la destination, car les
+// navigateurs ne traitent pas ce cas de la même façon (certains décalent le résultat ou n'affichent rien).
+function drawPhoto(c, sx, sy, sw, sh, dx, dy, dw, dh) {
   const fx = dw / sw, fy = dh / sh;
-  const x0 = Math.max(0, sx), y0 = Math.max(0, sy), x1 = Math.min(img.width, sx + sw), y1 = Math.min(img.height, sy + sh);
+  const x0 = Math.max(0, sx), y0 = Math.max(0, sy), x1 = Math.min(st.iw, sx + sw), y1 = Math.min(st.ih, sy + sh);
   if (x1 - x0 <= 0 || y1 - y0 <= 0) return;
-  c.drawImage(img, x0, y0, x1 - x0, y1 - y0, dx + (x0 - sx) * fx, dy + (y0 - sy) * fy, (x1 - x0) * fx, (y1 - y0) * fy);
+  c.drawImage(st.img, st.crop.x + x0, st.crop.y + y0, x1 - x0, y1 - y0, dx + (x0 - sx) * fx, dy + (y0 - sy) * fy, (x1 - x0) * fx, (y1 - y0) * fy);
 }
 
 function paintBase(c, k, u, L) {
@@ -437,7 +464,7 @@ function paintBase(c, k, u, L) {
 
   if (st.img) {
     c.imageSmoothingEnabled = true; c.imageSmoothingQuality = 'high';
-    drawClipped(c, st.img, L.src.x, L.src.y, L.src.w, L.src.h, px(D.x), px(D.y), px(D.w), px(D.h));
+    drawPhoto(c, L.src.x, L.src.y, L.src.w, L.src.h, px(D.x), px(D.y), px(D.w), px(D.h));
   }
   if (L.hasMargin) {
     c.save(); c.setLineDash([5 * u, 4 * u]); c.lineWidth = u; c.strokeStyle = 'rgba(0,0,0,.28)';
@@ -551,7 +578,7 @@ function paintOverlay(c, k, u, L) {
   c.save();
   c.beginPath(); c.arc(lx, ly, R, 0, 7); c.clip();
   c.imageSmoothingEnabled = true; c.imageSmoothingQuality = 'high';
-  drawClipped(c, st.img, q.x - r, q.y - r, 2 * r, 2 * r, lx - R, ly - R, 2 * R, 2 * R);
+  drawPhoto(c, q.x - r, q.y - r, 2 * r, 2 * r, lx - R, ly - R, 2 * R, 2 * R);
   // Les repères y figurent aussi, agrandis de même, pour viser une extrémité déjà posée.
   const S = R / r, lp = p => [lx + (p.x - q.x) * S, ly + (p.y - q.y) * S];
   c.lineCap = 'butt';
@@ -600,11 +627,118 @@ function fitCanvas() {
   view = { k: pw / L.W, u: dpr };
 }
 function repaint() {
+  if (ui.crop) return paintCrop();
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.drawImage(base, 0, 0);
   paintMarks(ctx, view.k, view.u, L, true);
   paintOverlay(ctx, view.k, view.u, L);
   status();
+}
+
+/* ---------- rognage de la photo d'origine ---------- */
+// Pendant le rognage, la photo entière remplace la feuille ; on y règle un cadre par ses coins, ses bords
+// ou son intérieur. Une fois validé, la zone gardée devient l'image pour tout le reste de l'outil.
+const CROP_M = 24;                 // marge autour de la photo (pixels écran), pour saisir les poignées jusqu'au bord
+const CROP_CUR = { nw: 'nwse-resize', se: 'nwse-resize', ne: 'nesw-resize', sw: 'nesw-resize', n: 'ns-resize', s: 'ns-resize', e: 'ew-resize', w: 'ew-resize', move: 'move' };
+let cropView = { s: 1, u: 1 };     // s : pixels écran par pixel de photo · u : pixels physiques par pixel écran
+const fullRect = () => ({ x: 0, y: 0, w: st.img.width, h: st.img.height });
+
+function openCrop() {
+  if (!st.img || ui.crop) return;
+  document.activeElement?.blur?.();
+  ui.crop = { ...st.crop }; ui.reopen = ui.open; ui.open = false;     // sur téléphone, toute la place pour la photo
+  act = null; ptrs.clear(); st.hover = null;
+  render();
+}
+function closeCrop(apply) {
+  if (!ui.crop) return;
+  const c = ui.crop;
+  ui.crop = null; ui.open = ui.reopen; act = null;
+  if (apply) setCrop(c);
+  render();
+}
+// Applique une zone gardée. Les repères restent accrochés aux mêmes détails de la photo.
+function setCrop(c) {
+  const FW = st.img.width, FH = st.img.height, o = st.crop;
+  const x = clamp(Math.round(c.x), 0, FW - 1), y = clamp(Math.round(c.y), 0, FH - 1);
+  const w = clamp(Math.round(c.w), 1, FW - x), h = clamp(Math.round(c.h), 1, FH - y);
+  if (x === o.x && y === o.y && w === o.w && h === o.h) return;
+  for (const m of st.marks) for (const q of [m.a, m.b]) { q.x += o.x - x; q.y += o.y - y; }
+  Object.assign(st, { crop: { x, y, w, h }, iw: w, ih: h, zoom: 1, cx: w / 2, cy: h / 2, mode: null, sel: -1 });
+  photoUI();
+}
+function fitCropView() {
+  const r = stage.getBoundingClientRect(), u = window.devicePixelRatio || 1, pad = 6, FW = st.img.width, FH = st.img.height;
+  const s = Math.max(1e-3, Math.min((r.width - 2 * pad - 2 * CROP_M) / FW, (r.height - 2 * pad - 2 * CROP_M) / FH));
+  const pw = Math.max(1, Math.round((FW * s + 2 * CROP_M) * u)), ph = Math.max(1, Math.round((FH * s + 2 * CROP_M) * u));
+  sheet.style.width = pw / u + 'px'; sheet.style.height = ph / u + 'px';
+  if (cv.width !== pw || cv.height !== ph) { cv.width = base.width = pw; cv.height = base.height = ph; }
+  cropView = { s, u };
+  bctx.setTransform(1, 0, 0, 1, 0, 0);
+  bctx.clearRect(0, 0, pw, ph);
+  bctx.imageSmoothingEnabled = true; bctx.imageSmoothingQuality = 'high';
+  bctx.drawImage(st.img, 0, 0, FW, FH, CROP_M * u, CROP_M * u, FW * s * u, FH * s * u);
+}
+function paintCrop() {
+  const { s, u } = cropView, c = ui.crop, k = s * u, o = CROP_M * u, X = v => o + v * k;
+  const x0 = X(c.x), y0 = X(c.y), x1 = X(c.x + c.w), y1 = X(c.y + c.h), r = X(st.img.width), b = X(st.img.height);
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, cv.width, cv.height);
+  ctx.drawImage(base, 0, 0);
+  ctx.fillStyle = 'rgba(18,16,14,.66)';                   // ce qui sera retiré est assombri
+  ctx.fillRect(o, o, r - o, y0 - o); ctx.fillRect(o, y1, r - o, b - y1);
+  ctx.fillRect(o, y0, x0 - o, y1 - y0); ctx.fillRect(x1, y0, r - x1, y1 - y0);
+  ctx.lineCap = 'butt';
+  ctx.lineWidth = u; ctx.strokeStyle = 'rgba(255,255,255,.45)';        // tiers
+  ctx.beginPath();
+  for (const t of [1 / 3, 2 / 3]) {
+    ctx.moveTo(x0 + (x1 - x0) * t, y0); ctx.lineTo(x0 + (x1 - x0) * t, y1);
+    ctx.moveTo(x0, y0 + (y1 - y0) * t); ctx.lineTo(x1, y0 + (y1 - y0) * t);
+  }
+  ctx.stroke();
+  ctx.lineWidth = 3 * u; ctx.strokeStyle = 'rgba(0,0,0,.35)'; ctx.strokeRect(x0, y0, x1 - x0, y1 - y0);
+  ctx.lineWidth = 1.5 * u; ctx.strokeStyle = '#fff'; ctx.strokeRect(x0, y0, x1 - x0, y1 - y0);
+  // poignées : équerres aux coins, barrettes au milieu des côtés
+  const corner = Math.min(20 * u, (x1 - x0) / 3, (y1 - y0) / 3), bar = 12 * u;
+  const handles = () => {
+    ctx.beginPath();
+    for (const [x, sx] of [[x0, 1], [x1, -1]]) for (const [y, sy] of [[y0, 1], [y1, -1]]) { ctx.moveTo(x + sx * corner, y); ctx.lineTo(x, y); ctx.lineTo(x, y + sy * corner); }
+    if (x1 - x0 > 90 * u) for (const y of [y0, y1]) { ctx.moveTo((x0 + x1) / 2 - bar, y); ctx.lineTo((x0 + x1) / 2 + bar, y); }
+    if (y1 - y0 > 90 * u) for (const x of [x0, x1]) { ctx.moveTo(x, (y0 + y1) / 2 - bar); ctx.lineTo(x, (y0 + y1) / 2 + bar); }
+    ctx.stroke();
+  };
+  ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  ctx.lineWidth = 7.5 * u; ctx.strokeStyle = 'rgba(0,0,0,.4)'; handles();
+  ctx.lineWidth = 4.5 * u; ctx.strokeStyle = '#fff'; handles();
+  status();
+}
+const cropPt = e => { const r = cv.getBoundingClientRect(); return { x: (e.clientX - r.left - CROP_M) / cropView.s, y: (e.clientY - r.top - CROP_M) / cropView.s }; };
+// Ce que le pointeur saisit : un coin, un bord, l'intérieur du cadre (pour le déplacer) ou rien.
+function cropHit(p, touch) {
+  const c = ui.crop, tol = (touch ? 26 : 10) / cropView.s, xs = [c.x, c.x + c.w], ys = [c.y, c.y + c.h];
+  let best = null, bd = tol;
+  for (const [i, hx] of [[0, 'w'], [1, 'e']]) for (const [j, hy] of [[0, 'n'], [1, 's']]) {
+    const d = Math.hypot(p.x - xs[i], p.y - ys[j]);
+    if (d <= bd) { bd = d; best = hy + hx; }
+  }
+  if (best) return best;
+  const inX = p.x >= xs[0] && p.x <= xs[1], inY = p.y >= ys[0] && p.y <= ys[1];
+  bd = tol * 0.75;
+  for (const [h, d, ok] of [['n', Math.abs(p.y - ys[0]), inX], ['s', Math.abs(p.y - ys[1]), inX], ['w', Math.abs(p.x - xs[0]), inY], ['e', Math.abs(p.x - xs[1]), inY]])
+    if (ok && d <= bd) { bd = d; best = h; }
+  return best || (inX && inY ? 'move' : null);
+}
+// Déplace la poignée saisie de l'écart parcouru depuis l'appui : le cadre ne saute pas sous le doigt.
+function cropDrag(a, p) {
+  const c = a.c0, FW = st.img.width, FH = st.img.height, dx = p.x - a.p0.x, dy = p.y - a.p0.y;
+  const min = Math.min(Math.max(16, 44 / cropView.s), FW, FH);
+  if (a.h === 'move') { ui.crop = { x: clamp(c.x + dx, 0, FW - c.w), y: clamp(c.y + dy, 0, FH - c.h), w: c.w, h: c.h }; return; }
+  let x0 = c.x, y0 = c.y, x1 = c.x + c.w, y1 = c.y + c.h;
+  if (a.h.includes('w')) x0 = clamp(x0 + dx, 0, x1 - min);
+  if (a.h.includes('e')) x1 = clamp(x1 + dx, x0 + min, FW);
+  if (a.h.includes('n')) y0 = clamp(y0 + dy, 0, y1 - min);
+  if (a.h.includes('s')) y1 = clamp(y1 + dy, y0 + min, FH);
+  ui.crop = { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
 }
 // Regroupe les mouvements du pointeur : au plus un rendu par image affichée.
 // Niveau 0 : survol · 1 : repères (liste + tracé) · 2 : tout (mise en page, photo, réglages).
@@ -631,20 +765,23 @@ const oName = o => o === 'landscape' ? 'paysage' : 'portrait';
 
 function render() {
   L = layout();
-  const has = !!st.img;
+  const has = !!st.img, cropping = !!ui.crop;
 
   // version téléphone : un seul réglage visible à la fois, repliable pour agrandir la feuille
   $('app').classList.toggle('closed', !ui.open);
   $('panel').dataset.tab = ui.tab;
   for (const s of document.querySelectorAll('aside section')) s.classList.toggle('on', s.dataset.tab === ui.tab);
   press('tabs', ui.open ? ui.tab : null);
-  fitCanvas();
+  sheet.classList.toggle('cropping', cropping);
+  $('tools').hidden = cropping; $('cropTools').hidden = !cropping;
+  $('cropOpen').disabled = cropping; $('cropActs').hidden = !has || cropping;
+  if (cropping) fitCropView(); else fitCanvas();
 
   $('dimW').textContent = cm(L.W); $('dimH').textContent = cm(L.H);
   $('drop').hidden = has; $('export').disabled = !has;
   press('orient', st.orient); press('tool', st.tool);
   press('mode', L.mode, has ? L.rec : null);
-  cv.style.cursor = st.tool === 'mark' ? 'crosshair' : (has && L.mode === 'cover' ? (act?.type === 'pan' ? 'grabbing' : 'grab') : 'default');
+  if (!cropping) cv.style.cursor = st.tool === 'mark' ? 'crosshair' : (has && L.mode === 'cover' ? (act?.type === 'pan' ? 'grabbing' : 'grab') : 'default');
 
   // orientation
   let oh = '';
@@ -692,6 +829,7 @@ function render() {
   $('result').innerHTML = rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('');
 
   marksUI();
+  if (cropping) return paintCrop();
   paintBase(bctx, view.k, view.u, L);
   repaint();
 }
@@ -720,6 +858,12 @@ function marksUI() {
 function status() {
   const el = $('status');
   if (!st.img) { el.textContent = 'Commencez par ajouter une photo de référence.'; return; }
+  if (ui.crop) {
+    const c = ui.crop, f = st.orig.f, pct = Math.round(100 * c.w * c.h / (st.img.width * st.img.height));
+    el.innerHTML = `<span>Zone gardée : <b>${Math.round(c.w / f)} × ${Math.round(c.h / f)} px</b> (${pct} % de la photo)</span>`
+      + `<span>${coarse() ? 'glissez les coins, les bords ou l\'intérieur du cadre' : 'faites glisser les coins, les bords ou l\'intérieur du cadre, puis validez'}</span>`;
+    return;
+  }
   const parts = [];
   if (st.tool === 'mark') {
     const drag = act?.type === 'end' ? act : null, i = drag ? drag.i : st.sel, m = st.marks[i];
@@ -751,7 +895,7 @@ function load(file) {
   img.onload = () => {
     const nw = img.naturalWidth, nh = img.naturalHeight;
     if (!nw || !nh) return fail();
-    let work, thumb;
+    let work;
     try {
       // Copie de travail : l'orientation de la photo (EXIF) est appliquée une fois pour toutes
       // et la taille plafonnée, ce qui libère l'original et garde les déplacements fluides.
@@ -761,32 +905,43 @@ function load(file) {
       const wc = work.getContext('2d');
       wc.imageSmoothingQuality = 'high';
       wc.drawImage(img, 0, 0, work.width, work.height);
-
-      const ts = Math.min(108 / Math.min(work.width, work.height), 432 / Math.max(work.width, work.height));
-      const tcv = document.createElement('canvas');
-      tcv.width = Math.max(1, Math.round(work.width * ts)); tcv.height = Math.max(1, Math.round(work.height * ts));
-      const tc = tcv.getContext('2d');
-      tc.fillStyle = PAPER; tc.fillRect(0, 0, tcv.width, tcv.height);
-      tc.imageSmoothingQuality = 'high';
-      tc.drawImage(work, 0, 0, tcv.width, tcv.height);
-      thumb = tcv.toDataURL('image/jpeg', 0.8);
     } catch { return fail(); }
     URL.revokeObjectURL(url);
 
-    Object.assign(st, { img: work, iw: work.width, ih: work.height,
+    if (ui.crop) { ui.crop = null; ui.open = ui.reopen; }
+    Object.assign(st, { img: work, crop: { x: 0, y: 0, w: work.width, h: work.height }, iw: work.width, ih: work.height,
+      orig: { name, w: nw, h: nh, f: work.width / nw },
       zoom: 1, cx: work.width / 2, cy: work.height / 2, mode: null, marks: [], sel: -1, hover: null });
-    act = null;
-    $('thumb').src = thumb; $('thumb').style.display = 'block';
-    $('photoMeta').innerHTML = `<b></b><span>${nw} × ${nh} px</span>`;
-    $('photoMeta').firstChild.textContent = name;
+    act = null; ptrs.clear();
     $('photoErr').hidden = true;
     $('pick').textContent = 'Changer';
     if (ui.tab === 'photo') ui.tab = 'sheet';      // sur téléphone, on enchaîne sur l'étape suivante
+    photoUI();
     render();
   };
   img.onerror = fail;
   img.src = url;
 }
+// Vignette et légende de la photo : elles montrent la zone gardée.
+function photoUI() {
+  const c = st.crop, o = st.orig, cropped = c.w !== st.img.width || c.h !== st.img.height;
+  $('photoActs').hidden = false; $('cropClear').hidden = !cropped;
+  $('cropOpen').textContent = cropped ? 'Modifier le rognage' : 'Rogner la photo';
+  $('photoMeta').innerHTML = `<b></b><span>${o.w} × ${o.h} px</span>` + (cropped ? `<span>rognée : ${Math.round(c.w / o.f)} × ${Math.round(c.h / o.f)} px</span>` : '');
+  $('photoMeta').firstChild.textContent = o.name;
+  const ts = Math.min(108 / Math.min(c.w, c.h), 432 / Math.max(c.w, c.h)), t = document.createElement('canvas');
+  t.width = Math.max(1, Math.round(c.w * ts)); t.height = Math.max(1, Math.round(c.h * ts));
+  const tc = t.getContext('2d');
+  tc.fillStyle = PAPER; tc.fillRect(0, 0, t.width, t.height);
+  tc.imageSmoothingQuality = 'high';
+  tc.drawImage(st.img, c.x, c.y, c.w, c.h, 0, 0, t.width, t.height);
+  $('thumb').src = t.toDataURL('image/jpeg', 0.8); $('thumb').style.display = 'block';
+}
+$('cropOpen').onclick = $('cropOpen2').onclick = openCrop;
+$('cropClear').onclick = () => { if (ui.crop) ui.crop = fullRect(); setCrop(fullRect()); render(); };
+$('cropReset').onclick = () => { ui.crop = fullRect(); schedule(0); };
+$('cropCancel').onclick = () => closeCrop(false);
+$('cropApply').onclick = () => closeCrop(true);
 $('pick').onclick = $('drop').onclick = () => $('file').click();
 $('file').onchange = e => { load(e.target.files[0]); e.target.value = ''; };
 addEventListener('paste', e => { const f = [...(e.clipboardData?.files || [])][0]; if (f) load(f); });
@@ -849,7 +1004,13 @@ $('clearMarks').onclick = () => {
   st.marks = []; st.sel = -1; render();
 };
 addEventListener('keydown', e => {
-  if (/^(INPUT|SELECT|TEXTAREA)$/.test(document.activeElement?.tagName || '') || st.sel < 0) return;
+  if (/^(INPUT|SELECT|TEXTAREA)$/.test(document.activeElement?.tagName || '')) return;
+  if (ui.crop) {                // rognage : Entrée valide, Échap annule
+    if (e.key === 'Enter') { e.preventDefault(); closeCrop(true); }
+    else if (e.key === 'Escape') closeCrop(false);
+    return;
+  }
+  if (st.sel < 0) return;
   if (e.key === 'Delete' || e.key === 'Backspace') { st.marks.splice(st.sel, 1); st.sel = -1; e.preventDefault(); render(); }
   else if (e.key === 'Escape') { st.sel = -1; render(); }
 });
@@ -921,6 +1082,11 @@ cv.addEventListener('pointerdown', e => {
   const ae = document.activeElement;
   if (ae && /^(INPUT|SELECT)$/.test(ae.tagName)) ae.blur();           // referme le clavier du téléphone
   try { cv.setPointerCapture(e.pointerId); } catch {}
+  if (ui.crop) {                // rognage : un seul pointeur règle le cadre
+    const p = cropPt(e), h = act ? null : cropHit(p, e.pointerType !== 'mouse');
+    if (h) act = { type: 'crop', h, p0: p, c0: { ...ui.crop }, id: e.pointerId };
+    return;
+  }
   L = layout();
   const p = toCm(e), touch = e.pointerType !== 'mouse';
   ptrs.set(e.pointerId, p);
@@ -938,6 +1104,11 @@ cv.addEventListener('pointerdown', e => {
 });
 cv.addEventListener('pointermove', e => {
   if (!st.img) return;
+  if (ui.crop) {
+    if (act?.type === 'crop') { if (e.pointerId === act.id) { cropDrag(act, cropPt(e)); schedule(0); } }
+    else if (e.pointerType === 'mouse') cv.style.cursor = CROP_CUR[cropHit(cropPt(e), false)] || 'default';
+    return;
+  }
   const p = toCm(e);
   if (ptrs.has(e.pointerId)) ptrs.set(e.pointerId, p);
   if (!act) {
@@ -979,6 +1150,10 @@ cv.addEventListener('pointermove', e => {
   }
 });
 function release(e, cancelled) {
+  if (ui.crop) {
+    if (act?.type === 'crop' && e.pointerId === act.id) { if (cancelled) ui.crop = act.c0; act = null; schedule(0); }
+    return;
+  }
   if (!ptrs.delete(e.pointerId)) return;
   if (act?.type === 'pinch' || act?.type === 'hold') {
     L = layout();
@@ -1001,7 +1176,7 @@ cv.addEventListener('pointerup', e => release(e, false));
 cv.addEventListener('pointercancel', e => release(e, true));
 cv.addEventListener('pointerleave', () => { if (st.hover) { st.hover = null; schedule(0); } });
 cv.addEventListener('wheel', e => {
-  if (!st.img || L.mode !== 'cover') return;
+  if (!st.img || ui.crop || L.mode !== 'cover') return;
   e.preventDefault();
   L = layout();
   const p = toCm(e);
