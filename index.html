@@ -419,6 +419,15 @@ function pill(c, x, y, w, h) {
   c.lineTo(x + r, y + h); c.arc(x + r, y + r, r, Math.PI / 2, Math.PI * 1.5); c.closePath();
 }
 
+// drawImage dont la zone source peut dépasser de la photo. Les navigateurs ne traitent pas ce cas de la
+// même façon (certains décalent ou n'affichent rien) : on rogne nous-mêmes la source et la destination.
+function drawClipped(c, img, sx, sy, sw, sh, dx, dy, dw, dh) {
+  const fx = dw / sw, fy = dh / sh;
+  const x0 = Math.max(0, sx), y0 = Math.max(0, sy), x1 = Math.min(img.width, sx + sw), y1 = Math.min(img.height, sy + sh);
+  if (x1 - x0 <= 0 || y1 - y0 <= 0) return;
+  c.drawImage(img, x0, y0, x1 - x0, y1 - y0, dx + (x0 - sx) * fx, dy + (y0 - sy) * fy, (x1 - x0) * fx, (y1 - y0) * fy);
+}
+
 function paintBase(c, k, u, L) {
   const px = v => v * k, D = L.D;
   c.setTransform(1, 0, 0, 1, 0, 0);
@@ -428,7 +437,7 @@ function paintBase(c, k, u, L) {
 
   if (st.img) {
     c.imageSmoothingEnabled = true; c.imageSmoothingQuality = 'high';
-    c.drawImage(st.img, L.src.x, L.src.y, L.src.w, L.src.h, px(D.x), px(D.y), px(D.w), px(D.h));
+    drawClipped(c, st.img, L.src.x, L.src.y, L.src.w, L.src.h, px(D.x), px(D.y), px(D.w), px(D.h));
   }
   if (L.hasMargin) {
     c.save(); c.setLineDash([5 * u, 4 * u]); c.lineWidth = u; c.strokeStyle = 'rgba(0,0,0,.28)';
@@ -542,9 +551,35 @@ function paintOverlay(c, k, u, L) {
   c.save();
   c.beginPath(); c.arc(lx, ly, R, 0, 7); c.clip();
   c.imageSmoothingEnabled = true; c.imageSmoothingQuality = 'high';
-  c.drawImage(st.img, q.x - r, q.y - r, 2 * r, 2 * r, lx - R, ly - R, 2 * R, 2 * R);
+  drawClipped(c, st.img, q.x - r, q.y - r, 2 * r, 2 * r, lx - R, ly - R, 2 * R, 2 * R);
+  // Les repères y figurent aussi, agrandis de même, pour viser une extrémité déjà posée.
+  const S = R / r, lp = p => [lx + (p.x - q.x) * S, ly + (p.y - q.y) * S];
+  c.lineCap = 'butt';
+  st.marks.forEach((m, i) => {
+    let [ax, ay] = lp(m.a), [bx, by] = lp(m.b);
+    const own = i === act.i;
+    if (own) {                  // le trait en cours s'arrête avant le centre, pour laisser voir le point visé
+      const [fx, fy] = act.end === 'a' ? [bx, by] : [ax, ay], d = Math.hypot(fx - lx, fy - ly), gap = 9 * u;
+      if (d <= gap) return;
+      ax = fx; ay = fy; bx = lx + (fx - lx) * gap / d; by = ly + (fy - ly) * gap / d;
+    }
+    const seg = () => { c.beginPath(); c.moveTo(ax, ay); c.lineTo(bx, by); c.stroke(); };
+    c.lineWidth = 4.5 * u; c.strokeStyle = 'rgba(255,255,255,.85)'; seg();
+    c.lineWidth = 2 * u; c.strokeStyle = INK; seg();
+    for (const end of ['a', 'b']) {
+      if (own && end === act.end) continue;
+      const [ex, ey] = lp(m[end]);
+      c.beginPath(); c.arc(ex, ey, 5 * u, 0, 7);
+      c.fillStyle = '#fff'; c.fill(); c.lineWidth = 2 * u; c.strokeStyle = INK; c.stroke();
+    }
+  });
   c.restore();
   c.beginPath(); c.arc(lx, ly, R, 0, 7); c.lineWidth = 3 * u; c.strokeStyle = '#fff'; c.stroke();
+  if (act.snapped) {            // aimanté : le réticule se verrouille sur l'extrémité existante
+    c.beginPath(); c.arc(lx, ly, 10 * u, 0, 7);
+    c.lineWidth = 4.5 * u; c.strokeStyle = 'rgba(255,255,255,.9)'; c.stroke();
+    c.lineWidth = 2 * u; c.strokeStyle = INK; c.stroke();
+  }
   const reticle = () => {
     c.beginPath();
     for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { c.moveTo(lx + dx * 5 * u, ly + dy * 5 * u); c.lineTo(lx + dx * 17 * u, ly + dy * 17 * u); }
@@ -690,8 +725,10 @@ function status() {
     const drag = act?.type === 'end' ? act : null, i = drag ? drag.i : st.sel, m = st.marks[i];
     if (m) {
       const a = toSheet(m.a), b = toSheet(m.b);
-      parts.push(`Repère ${i + 1} : <b>${cm(dist(a, b))}</b>`, `↔ ${cm(Math.abs(b.x - a.x))}`, `↕ ${cm(Math.abs(b.y - a.y))}`);
+      parts.push(`Repère ${i + 1} : <b>${cm(dist(a, b))}</b>`);
+      if (drag || !coarse()) parts.push(`↔ ${cm(Math.abs(b.x - a.x))}`, `↕ ${cm(Math.abs(b.y - a.y))}`);
       if (drag) { const q = drag.end === 'a' ? a : b; parts.push(`point à <b>${cm(q.x)}</b> du bord gauche et <b>${cm(q.y)}</b> du haut`); }
+      else if (coarse()) parts.push('glissez une extrémité pour l\'ajuster', 'touchez ailleurs pour terminer');
       else if (!st.hover) parts.push('faites glisser une extrémité pour l\'ajuster');
     }
     if (st.hover && !drag) parts.push(`Curseur à <b>${cm(st.hover.x)}</b> du bord gauche et <b>${cm(st.hover.y)}</b> du haut`);
@@ -822,7 +859,7 @@ const toCm = e => { const r = cv.getBoundingClientRect(); return { x: (e.clientX
 
 // Aimante un point sur l'extrémité d'un autre repère toute proche, pour enchaîner les mesures.
 function snap(q, skip, touch) {
-  let best = null, bd = cssCm(touch ? 14 : 9) / L.s;
+  let best = null, bd = cssCm(touch ? 10 : 8) / L.s;
   st.marks.forEach((m, i) => {
     if (i === skip) return;
     for (const e of [m.a, m.b]) { const d = dist(e, q); if (d < bd) { bd = d; best = e; } }
@@ -851,6 +888,24 @@ function zoomAt(anchor, p, zoom) {
   st.cx = anchor.x - (p.x - L.A.x) / s + L.A.w / s / 2;
   st.cy = anchor.y - (p.y - L.A.y) / s + L.A.h / s / 2;
 }
+// Quand le doigt se lève, son point de contact glisse de quelques pixels et emporterait le repère.
+// On revient donc à la dernière position où le doigt s'était posé (immobile un court instant),
+// à condition que ce qui suit ressemble bien à un lever : bref et de faible amplitude.
+const LIFT = { r: 2.5, dwell: 90, far: 14, late: 250 };   // pixels écran et millisecondes
+const stamp = e => e.timeStamp > 0 ? e.timeStamp : performance.now();
+function settle(a, now) {
+  const tr = a.trail, n = tr.length, px = cssCm(1);
+  for (let i = n - 1; i >= 0; i--) {
+    let j = i + 1;
+    while (j < n && dist(tr[j].p, tr[i].p) <= LIFT.r * px) j++;
+    const until = j < n ? tr[j].t : now;                  // instant où le doigt a quitté cette position
+    if (until - tr[i].t < LIFT.dwell) continue;
+    if (i < n - 1 && now - until <= LIFT.late && dist(tr[n - 1].p, tr[i].p) <= LIFT.far * px) {
+      st.marks[a.i][a.end] = tr[i].q; a.snapped = tr[i].snapped;
+    }
+    return;
+  }
+}
 function startPinch() {
   if (act?.type === 'end' && act.created) { st.marks.splice(act.i, 1); st.sel = -1; }   // repère en cours abandonné
   L = layout();
@@ -873,10 +928,8 @@ cv.addEventListener('pointerdown', e => {
   if (st.tool === 'mark') {
     st.hover = null;
     const end = st.sel >= 0 ? hitEnd(st.sel, p, cssCm(touch ? 26 : 10)) : null;
-    if (end) {
-      const s = toSheet(st.marks[st.sel][end]);
-      act = { type: 'end', i: st.sel, end, touch, off: { x: s.x - p.x, y: s.y - p.y } };
-    } else act = { type: 'new', p0: p, touch };
+    if (end) act = { type: 'end', i: st.sel, end, touch, down: p, off: null, trail: [] };
+    else act = { type: 'new', p0: p, touch };
     schedule(1);
   } else if (L.mode === 'cover') {
     act = { type: 'pan', p0: p, cx: st.cx, cy: st.cy };
@@ -906,12 +959,22 @@ cv.addEventListener('pointermove', e => {
     const a = snap(toImg(act.p0), -1, act.touch);
     st.marks.push({ a, b: { x: a.x, y: a.y } });
     st.sel = st.marks.length - 1;
-    act = { type: 'end', i: st.sel, end: 'b', touch: act.touch, off: { x: 0, y: 0 }, created: true };
+    act = { type: 'end', i: st.sel, end: 'b', touch: act.touch, off: { x: 0, y: 0 }, created: true, trail: [] };
   }
   if (act.type === 'end') {
+    if (!act.off) {             // zone morte : un simple appui sur une extrémité ne la déplace pas
+      const dead = cssCm(act.touch ? 5 : 2), d = dist(p, act.down);
+      if (d < dead) return;
+      // le point repart de sa place sans sauter, et garde ensuite son écart au doigt
+      const s = toSheet(st.marks[act.i][act.end]), f = dead / d;
+      act.off = { x: s.x - (act.down.x + (p.x - act.down.x) * f), y: s.y - (act.down.y + (p.y - act.down.y) * f) };
+    }
     const q = toImg({ x: p.x + act.off.x, y: p.y + act.off.y }), sq = snap(q, act.i, act.touch);
     act.snapped = sq !== q;
     st.marks[act.i][act.end] = sq;
+    const t = stamp(e), tr = act.trail;
+    tr.push({ t, p, q: sq, snapped: act.snapped });
+    while (tr.length > 2 && tr[1].t < t - 700) tr.shift();
     schedule(1);
   }
 });
@@ -925,6 +988,7 @@ function release(e, cancelled) {
     return render();
   }
   if (act?.type === 'new' && !cancelled) st.sel = hitMark(toCm(e), act.touch);      // simple appui : sélectionne ou désélectionne
+  if (act?.type === 'end' && act.touch && !cancelled) settle(act, stamp(e));
   if (act?.type === 'end' && act.created) {
     const m = st.marks[act.i];
     if (cancelled || dist(m.a, m.b) * L.s < 0.1) { st.marks.splice(act.i, 1); st.sel = -1; }
