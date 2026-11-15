@@ -7,6 +7,9 @@
 <meta name="theme-color" content="#e7e3db" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#100f0e" media="(prefers-color-scheme: dark)">
 <title>Ratio — proportions pour le dessin</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <meta name="description" content="Placez une photo de référence sur votre feuille de dessin : orientation, cadrage, dimensions, mise au carreau, points repères et distances.">
 <style>
 :root{
@@ -1848,6 +1851,8 @@ render();
 if (ui.restoring) resume();
 else if (sess && sess.later) note('later', 'Un travail enregistré par une version plus récente de Ratio ne peut pas être rouvert ici.', ['Recharger', () => location.reload()], ['Effacer', forgetAsk]);
 else if (sess) resumeFailed();
+// Application installable et utilisable hors ligne (servie en https ; sans effet en fichier local ou en aperçu)
+try { if (/^https?:$/.test(location.protocol) && navigator.serviceWorker) navigator.serviceWorker.register('sw.js').catch(e => console.warn('Ratio : mode hors ligne indisponible', e)); } catch (e) {}
 })();
 </script>
 </body>
