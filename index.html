@@ -142,6 +142,18 @@ main{display:flex;flex-direction:column;min-width:0;min-height:0;background:var(
 }
 .drop div{border:1.5px dashed #c9c3b8;border-radius:12px;padding:22px 18px;max-width:260px}
 .drop strong{display:block;color:#1f1d1a;font-size:15px;margin-bottom:4px}
+/* reprise du dernier travail : n'apparaît que si elle dure, pour ne pas clignoter */
+.resume{position:absolute;top:0;left:0;width:100%;height:100%;display:grid;place-items:center;text-align:center;padding:16px;color:#6f6a62;font-size:13px;animation:late .3s .45s both}
+@keyframes late{from{opacity:0}to{opacity:1}}
+/* message posé sur la scène : visible quel que soit l'onglet, sans déplacer la feuille */
+.note{
+  position:absolute;z-index:2;top:10px;left:50%;transform:translateX(-50%);width:calc(100% - 20px);max-width:520px;
+  display:flex;align-items:center;flex-wrap:wrap;gap:8px 10px;padding:10px 40px 10px 14px;
+  background:var(--panel);color:var(--ink);border-radius:12px;box-shadow:0 2px 12px rgba(0,0,0,.3);font-size:12.5px;line-height:1.4;
+}
+.note p{margin:0;flex:1 1 230px}
+.note .btn{padding:6px 12px}
+.note .x{position:absolute;top:3px;right:3px;width:34px;height:34px;border:0;background:none;font-size:18px;line-height:1;color:var(--muted);cursor:pointer;border-radius:8px}
 /* hauteur fixe : le texte change pendant les gestes, la feuille ne doit pas bouger pour autant */
 .status{
   padding:9px 16px;font-size:12.5px;line-height:20px;color:var(--muted);height:38px;overflow:hidden;
@@ -220,9 +232,12 @@ body.dragover .paper{outline:3px solid var(--accent);outline-offset:4px}
         <button class="btn" id="cropOpen" type="button">Rogner la photo</button>
         <button class="link" id="cropClear" type="button" hidden>Rétablir la photo entière</button>
       </div>
+      <div class="acts" id="forgetRow" style="margin-top:2px" hidden>
+        <button class="link" id="forget" type="button">Effacer la photo et les repères</button>
+      </div>
       <input type="file" id="file" accept="image/*" hidden>
       <p class="hint err" id="photoErr" hidden></p>
-      <p class="hint"><span class="fine-only">Vous pouvez aussi glisser-déposer ou coller (Ctrl+V) une image. </span>Rien n'est envoyé : la photo reste dans votre navigateur.</p>
+      <p class="hint"><span class="fine-only">Vous pouvez aussi glisser-déposer ou coller (Ctrl+V) une image. </span><span id="keepT">Rien n'est envoyé sur Internet.</span></p>
     </section>
 
     <section data-tab="sheet">
@@ -334,11 +349,18 @@ body.dragover .paper{outline:3px solid var(--accent);outline-offset:4px}
         <span class="dim w" id="dimW"></span>
         <span class="dim h" id="dimH"></span>
         <button class="drop" id="drop"><div><strong id="dropT">Déposez votre photo ici</strong><span id="dropS">ou cliquez pour la choisir</span></div></button>
+        <div class="resume" id="resumeT" hidden>Reprise de votre travail…</div>
       </div>
       <div class="zoomer" id="zoomer" hidden>
         <button class="step" id="zOut" type="button" aria-label="Dézoomer la vue">−</button>
         <button id="zFit" type="button" title="Revoir la feuille entière">100 %</button>
         <button class="step" id="zIn" type="button" aria-label="Zoomer la vue">+</button>
+      </div>
+      <div class="note" id="note" role="status" hidden>
+        <p id="noteT"></p>
+        <button class="btn" id="noteA" type="button"></button>
+        <button class="btn" id="noteB" type="button"></button>
+        <button class="x" id="noteX" type="button" aria-label="Fermer ce message">×</button>
       </div>
     </div>
     <div class="status" id="status"></div>
@@ -382,6 +404,8 @@ const st = {
 const ui = {
   tab: 'photo', open: true,     // onglets de la version téléphone
   crop: null, reopen: true,     // cadre en cours de réglage pendant le rognage (pixels de la photo entière)
+  restoring: false,             // le dernier travail est en train d'être rouvert
+  resumed: false,               // il vient de l'être : la barre d'état le dit jusqu'au premier geste
   markTool: 'point',            // dernier outil de repère utilisé
 };
 // Vue : zoom d'affichage et point de la feuille (cm) placé au centre de la scène.
@@ -399,6 +423,73 @@ try {
 const save = () => {
   try { localStorage.setItem('ratio', JSON.stringify({ w: st.w, h: st.h, m: st.m, grid: st.grid, split: st.split, mt: st.mt, mb: st.mb, ml: st.ml, mr: st.mr })); } catch {}
 };
+
+/* ---------- travail en cours, gardé dans le navigateur ---------- */
+// Les réglages de la feuille restent sous « ratio » (ci-dessus). Le travail sur une photo a sa propre clé :
+//   ratio.session = { v, photoId, name, ow, oh, work:{w,h}, crop, orient, o, mode, zoom, cx, cy, tool, markTool, tab, open, marks }
+// et la photo elle-même est dans IndexedDB (base « ratio-photos »), sous l'identifiant photoId.
+// crop est en pixels de la copie de travail (work) ; marks, cx et cy sont comptés depuis le coin de la zone gardée, comme en mémoire.
+// Règle d'or : la session n'est écrite que si la photo affichée est bien celle qu'elle désigne (memId === savedId).
+// Rien ne peut donc l'écraser pendant une reprise, après une reprise manquée ou tant qu'une nouvelle photo n'est pas enregistrée.
+const SKEY = 'ratio.session', BOOT = 'ratio.boot', DB = 'ratio-photos';
+const TABS = ['photo', 'sheet', 'crop', 'grid', 'marks', 'sum'];
+let canStore = !!window.indexedDB;     // faux dans un aperçu en bac à sable, où tout accès au stockage est refusé
+let sess = null;          // session lue au démarrage, tant que sa photo n'est pas revenue
+let memId = null;         // identifiant de la photo affichée
+let savedId = null;       // identifiant de la photo que désigne la session enregistrée
+let lastMem = '';         // état de cette fenêtre tel qu'il a été repris ou écrit en dernier
+let lastStored = null;    // texte exact lu ou écrit en dernier dans le navigateur (une autre fenêtre peut l'avoir changé depuis)
+let saveTimer = 0, slowTimer = 0, tries = 0, picks = 0, autoRetry = 0, leaving = false;
+let pendingPhoto = null;  // photo en cours d'écriture { id, rec, n }
+const lsGet = k => { try { return localStorage.getItem(k); } catch (e) { canStore = false; return null; } };
+const lsSet = (k, v) => { try { localStorage.setItem(k, v); return true; } catch (e) { console.warn('Ratio : écriture refusée par le navigateur', e); return false; } };
+const lsDel = k => { try { localStorage.removeItem(k); } catch (e) { canStore = false; } };
+// Lit une session enregistrée. Rend null, ou un objet dont chaque champ a déjà son type définitif :
+// une valeur inattendue ne doit jamais pouvoir bloquer l'affichage à chaque démarrage.
+const readSession = str => {
+  let s;
+  try { s = JSON.parse(str); } catch (e) { return null; }
+  if (!s || typeof s !== 'object' || typeof s.photoId !== 'string' || !s.photoId) return null;
+  if (s.v !== 1) return s.v > 1 ? { photoId: s.photoId, later: true } : null;      // version plus récente : ni reprise ni écrasement
+  const fin = Number.isFinite, among = (v, list, d) => list.includes(v) ? v : d, size = v => Number.isInteger(v) && v > 0 && v <= 1e5;
+  const out = {
+    photoId: s.photoId,
+    name: typeof s.name === 'string' && s.name ? s.name.slice(0, 200) : 'Photo',
+    ow: size(s.ow) ? s.ow : 0, oh: size(s.oh) ? s.oh : 0,
+    orient: among(s.orient, ['auto', 'portrait', 'landscape'], 'auto'),
+    o: among(s.o, ['portrait', 'landscape'], null),
+    mode: among(s.mode, ['fit', 'cover'], null),
+    zoom: fin(s.zoom) ? clamp(s.zoom, 1, MAX_ZOOM) : 1,
+    tool: among(s.tool, ['move', 'point', 'dist'], 'move'),
+    markTool: among(s.markTool, ['point', 'dist'], 'point'),
+    tab: among(s.tab, TABS, 'photo'),
+    open: s.open !== false,
+    geo: null,              // rognage, cadrage et repères : repris seulement si tout ce qui les situe est lisible
+  };
+  if (out.tool !== 'move') out.markTool = out.tool;
+  const w = s.work, c = s.crop;
+  if (w && size(w.w) && size(w.h) && c && [c.x, c.y, c.w, c.h].every(fin)) {
+    const pt = q => Array.isArray(q) && q.length === 2 && fin(q[0]) && fin(q[1]) ? { x: q[0], y: q[1] } : null;
+    const marks = [];
+    for (const m of Array.isArray(s.marks) ? s.marks.slice(0, 500) : []) {
+      const a = m && pt(m.a), b = m && m.b !== undefined ? pt(m.b) : undefined;
+      if (!a || b === null) continue;                  // repère illisible : on garde les autres
+      const k = { a };
+      if (b) k.b = b;
+      if (typeof m.name === 'string' && m.name) k.name = m.name.slice(0, 40);
+      marks.push(k);
+    }
+    out.geo = { w: w.w, h: w.h, crop: { x: c.x, y: c.y, w: c.w, h: c.h }, cx: fin(s.cx) ? s.cx : null, cy: fin(s.cy) ? s.cy : null, marks };
+  }
+  return out;
+};
+lastStored = lsGet(SKEY);
+sess = lastStored ? readSession(lastStored) : null;
+if (sess) {
+  savedId = sess.photoId;
+  // ce qui ne dépend pas de la photo est remis tout de suite : la feuille s'affiche d'emblée comme on l'avait laissée
+  if (!sess.later) { st.orient = sess.orient; st.tool = sess.tool; ui.markTool = sess.markTool; ui.tab = sess.tab; ui.open = sess.open; }
+}
 
 const cv = $('cv'), ctx = cv.getContext('2d'), stage = $('stage');
 // La feuille (photo + grille) est peinte dans `base` ; l'écran y ajoute les repères, le survol et la loupe.
@@ -431,7 +522,7 @@ function layout() {
     const size = o => { const f = frame(o); return Math.min(f.A.w / st.iw, f.A.h / st.ih); };
     const sp = size('portrait'), sl = size('landscape');
     auto = sl > sp * 1.02 ? 'landscape' : sp > sl * 1.02 ? 'portrait' : typed;
-  }
+  } else if (ui.restoring && sess?.o) auto = sess.o;     // reprise en cours : la feuille est déjà dans le sens qu'elle aura
   const o = st.orient === 'auto' ? auto : st.orient;
   const { W, H, A, hasMargin } = frame(o);
   const out = { W, H, A, hasMargin, o, auto, typed, rotated: o !== typed && st.w !== st.h };
@@ -818,10 +909,13 @@ function closeCrop(apply) {
   render();
 }
 // Applique une zone gardée. Les repères restent accrochés aux mêmes détails de la photo.
-function setCrop(c) {
-  const FW = st.img.width, FH = st.img.height, o = st.crop;
+const fitCrop = c => {
+  const FW = st.img.width, FH = st.img.height;
   const x = clamp(Math.round(c.x), 0, FW - 1), y = clamp(Math.round(c.y), 0, FH - 1);
-  const w = clamp(Math.round(c.w), 1, FW - x), h = clamp(Math.round(c.h), 1, FH - y);
+  return { x, y, w: clamp(Math.round(c.w), 1, FW - x), h: clamp(Math.round(c.h), 1, FH - y) };
+};
+function setCrop(c) {
+  const o = st.crop, { x, y, w, h } = fitCrop(c);
   if (x === o.x && y === o.y && w === o.w && h === o.h) return;
   for (const m of st.marks) for (const q of ends(m)) { q.x += o.x - x; q.y += o.y - y; }
   Object.assign(st, { crop: { x, y, w, h }, iw: w, ih: h, zoom: 1, cx: w / 2, cy: h / 2, mode: null, sel: -1 });
@@ -910,6 +1004,7 @@ const oName = o => o === 'landscape' ? 'paysage' : 'portrait';
 
 function render() {
   L = layout();
+  queueSave();
   const has = !!st.img, cropping = !!ui.crop;
 
   // version téléphone : un seul réglage visible à la fois, repliable pour agrandir la feuille
@@ -924,7 +1019,11 @@ function render() {
   zoomUI();
 
   $('dimW').textContent = cm(L.W); $('dimH').textContent = cm(L.H);
-  $('drop').hidden = has; $('export').disabled = !has;
+  $('app').classList.toggle('restoring', !!ui.restoring);
+  $('drop').hidden = has || !!ui.restoring; $('resumeT').hidden = has || !ui.restoring;
+  $('export').disabled = !has;
+  $('forgetRow').hidden = !(has || savedId);        // aussi quand un travail enregistré n'a pas pu être rouvert
+  if (!has) $('photoMeta').textContent = ui.restoring && sess ? `Reprise de « ${sess.name} »…` : 'Aucune photo';
   press('orient', st.orient); press('tool', st.tool);
   press('mode', L.mode, has ? L.rec : null);
   if (!cropping) setCursor();
@@ -1006,7 +1105,8 @@ function marksUI() {
 
 function status() {
   const el = $('status');
-  if (!st.img) { el.textContent = 'Commencez par ajouter une photo de référence.'; return; }
+  if (!st.img) { el.textContent = ui.restoring ? 'Reprise de votre dernier travail…' : 'Commencez par ajouter une photo de référence.'; return; }
+  if (ui.resumed && !ui.crop) { el.textContent = 'Votre travail a été repris là où vous l\'aviez laissé.'; return; }
   const touch = coarse();
   if (ui.crop) {
     const c = ui.crop, f = st.orig.f, pct = Math.round(100 * c.w * c.h / (st.img.width * st.img.height));
@@ -1036,17 +1136,295 @@ function status() {
   el.innerHTML = parts.map(p => `<span>${p}</span>`).join('');
 }
 
+/* ---------- enregistrement et reprise du travail ---------- */
+// Message posé sur la scène, avec au plus deux actions [libellé, fonction].
+let noteKind = '', noteArgs = null;
+const note = (kind, text, a, b) => {
+  noteKind = kind; noteArgs = [kind, text, a, b];
+  $('noteT').textContent = text;
+  for (const [el, x] of [[$('noteA'), a], [$('noteB'), b]]) { el.hidden = !x; if (x) { el.textContent = x[0]; el.onclick = x[1]; } }
+  $('note').hidden = false;
+};
+const unnote = kind => { if (kind && kind !== noteKind) return; noteKind = ''; noteArgs = null; $('note').hidden = true; };
+$('noteX').onclick = () => unnote();
+const UNSAVED = {
+  nostore: 'Votre travail ne peut pas être enregistré ici : il sera perdu à la fermeture de la page. Pensez à exporter l\'image.',
+  quota: 'Il n\'y a pas assez de place sur cet appareil pour enregistrer cette photo : ce travail sera perdu à la fermeture de la page. Exportez l\'image avant de quitter.',
+  photo: 'Cette photo n\'a pas pu être enregistrée sur cet appareil : ce travail sera perdu à la fermeture de la page. Exportez l\'image avant de quitter.',
+  state: 'Vos dernières modifications n\'ont pas pu être enregistrées sur cet appareil. Exportez l\'image avant de quitter.',
+};
+const toldOnce = {};
+const unsaved = why => {
+  if (why === 'nostore' || why === 'state') { if (toldOnce[why]) return; toldOnce[why] = true; }
+  note('unsaved', UNSAVED[why], why === 'quota' || why === 'photo' ? ['Réessayer', keepHere] : null);
+};
+
+// État à enregistrer. Un repère en cours de pose n'en fait pas encore partie ; un point en cours de déplacement y garde sa place d'avant.
+const pack = () => {
+  const drag = act?.type === 'end' ? act : null, marks = [];
+  st.marks.forEach((m, i) => {
+    const mine = drag && drag.i === i;
+    if (mine && drag.created) return;
+    const end = k => { const q = mine && drag.end === k && drag.orig ? drag.orig : m[k]; return [q.x, q.y]; };
+    const k = { a: end('a') };
+    if (m.b) k.b = end('b');
+    if (m.name) k.name = m.name;
+    marks.push(k);
+  });
+  return JSON.stringify({ v: 1, photoId: memId, name: st.orig.name, ow: st.orig.w, oh: st.orig.h, work: { w: st.img.width, h: st.img.height },
+    crop: st.crop, orient: st.orient, o: L.o, mode: st.mode, zoom: st.zoom, cx: st.cx, cy: st.cy,
+    tool: st.tool, markTool: ui.markTool, tab: ui.tab, open: ui.crop ? ui.reopen : ui.open, marks });
+};
+// Écrit la session si elle a changé ici, et seulement si aucune autre fenêtre ne l'a réécrite entre-temps.
+// `first` : première écriture pour une photo qui vient d'être enregistrée ; elle remplace d'office le travail précédent.
+const writeSession = first => {
+  if (!memId || memId !== savedId) return false;
+  const cur = pack();
+  if (!first) {
+    if (cur === lastMem) return true;
+    if (lsGet(SKEY) !== lastStored) { detach(); return false; }
+  }
+  if (!lsSet(SKEY, cur)) { if (!first) unsaved('state'); return false; }
+  lastMem = lastStored = cur;
+  return true;
+};
+const queueSave = () => { if (memId && memId === savedId && !saveTimer) saveTimer = setTimeout(() => { saveTimer = 0; writeSession(); }, 300); };
+const flushSave = () => { clearTimeout(saveTimer); saveTimer = 0; writeSession(); };
+// Une autre fenêtre a enregistré, remplacé ou effacé le travail : celle-ci cesse d'écrire, pour ne rien écraser.
+const detach = () => {
+  savedId = null; lastStored = lsGet(SKEY); clearTimeout(saveTimer); saveTimer = 0;
+  note('other', 'Ce travail n\'est plus enregistré ici : il a été remplacé ou effacé depuis une autre fenêtre.',
+    ['Garder celui-ci', keepHere], ['Recharger', () => { leaving = true; location.reload(); }]);
+};
+const others = () => {
+  const cur = lsGet(SKEY);
+  if (leaving || cur === lastStored) return;
+  const s = cur ? readSession(cur) : null;
+  if (!memId || (memId === savedId && s && s.photoId === savedId && !act && pack() === lastMem)) {
+    if (document.hidden) return;                     // on verra au retour sur cette fenêtre
+    leaving = true; savedId = null;
+    return location.reload();                        // rien d'unique ici : on reprend le travail le plus récent
+  }
+  if (memId !== savedId) { lastStored = cur; return; }      // cette fenêtre n'enregistrait déjà pas
+  detach();
+};
+
+// IndexedDB : une connexion par opération, refermée aussitôt (une connexion gardée ne survit pas à la mise en veille d'un téléphone).
+// Seule la fin de la transaction vaut réussite : un manque de place n'arrive qu'après le « succès » de la requête.
+const idb = (mode, fn) => new Promise((resolve, reject) => {
+  let done = false;
+  const end = (ok, v) => { if (!done) { done = true; (ok ? resolve : reject)(v); } };
+  try {
+    const open = indexedDB.open(DB, 1);
+    open.onupgradeneeded = () => open.result.createObjectStore('photos');
+    open.onblocked = () => end(false, new Error('base occupée'));
+    open.onerror = () => end(false, open.error);
+    open.onsuccess = () => {
+      const db = open.result;
+      db.onversionchange = () => db.close();
+      try {
+        const tx = mode === 'readwrite' ? db.transaction('photos', mode, { durability: 'strict' }) : db.transaction('photos', mode);
+        const req = fn(tx.objectStore('photos'));
+        tx.oncomplete = () => { db.close(); end(true, req && req.result); };
+        tx.onabort = () => { db.close(); end(false, tx.error || new Error('transaction interrompue')); };
+      } catch (e) { db.close(); end(false, e); }
+    };
+  } catch (e) { end(false, e); }       // bac à sable : indexedDB.open lève aussitôt
+});
+const photoGet = id => idb('readonly', store => store.get(id));
+const photoPut = (id, rec) => idb('readwrite', store => store.put(rec, id));
+const photoClear = () => idb('readwrite', store => store.clear());
+// Retire les photos que plus rien ne désigne. Les identifiants commencent par leur date : les plus récentes sont épargnées,
+// une autre fenêtre vient peut-être de les enregistrer.
+const photoSweep = (keep, also) => idb('readwrite', store => {
+  const all = store.getAllKeys();
+  all.onsuccess = () => { for (const k of all.result) if (k !== keep && (k === also || !(Date.now() - parseInt(k, 10) < 60000))) store.delete(k); };
+}).catch(e => console.warn('Ratio : nettoyage des photos impossible', e));
+
+// Certains réglages de confidentialité brouillent la relecture des canvas : on vérifie qu'elle rend bien ce qu'on y a dessiné.
+let readable = null;
+const canvasReadable = () => {
+  if (readable != null) return readable;
+  try {
+    const c = document.createElement('canvas'); c.width = c.height = 8;
+    const x = c.getContext('2d');
+    x.fillStyle = '#1e5a96'; x.fillRect(0, 0, 4, 8); x.fillStyle = '#c8b432'; x.fillRect(4, 0, 4, 8);
+    const d = x.getImageData(0, 0, 8, 8).data;
+    const near = (i, r, g, b) => Math.abs(d[i] - r) + Math.abs(d[i + 1] - g) + Math.abs(d[i + 2] - b) < 12 && d[i + 3] === 255;
+    readable = near(36, 30, 90, 150) && near(56, 200, 180, 50) && near(196, 30, 90, 150) && near(216, 200, 180, 50);
+  } catch (e) { readable = false; }
+  return readable;
+};
+const bytesOf = b => b.arrayBuffer ? b.arrayBuffer() : new Response(b).arrayBuffer();
+// Ce qu'on garde de la photo : sa copie de travail en JPEG (légère, rapide à rouvrir à chaque visite) ; à défaut, le fichier d'origine.
+const encodePhoto = (work, file) => new Promise((resolve, reject) => {
+  const orig = () => file ? resolve(bytesOf(file).then(bytes => ({ bytes, type: file.type || '' }))) : reject(new Error('copie de la photo impossible'));
+  if (!canvasReadable()) return orig();
+  try { work.toBlob(b => b ? resolve(bytesOf(b).then(bytes => ({ bytes, type: b.type }))) : orig(), 'image/jpeg', 0.92); }
+  catch (e) { orig(); }
+});
+// Enregistre la photo affichée, puis seulement la session qui la désigne :
+// tant que la photo n'est pas écrite, c'est le travail précédent qui reste enregistré, entier.
+const persistPhoto = file => {
+  const id = Date.now() + '-' + Math.random().toString(36).slice(2, 10), work = st.img;
+  memId = id; pendingPhoto = null;
+  if (!canStore) return unsaved('nostore');
+  setTimeout(() => {                    // une fois la photo affichée : l'encodage peut prendre une seconde sur un téléphone
+    if (id !== memId) return;
+    encodePhoto(work, file).then(rec => { if (id !== memId) return; pendingPhoto = { id, rec, n: 0 }; storePhoto(); },
+      e => { if (id === memId) photoFailed(e); });
+  }, 50);
+  setTimeout(() => { if (id === memId && savedId !== id && noteKind !== 'unsaved') unsaved('photo'); }, 20000);     // écriture qui ne répond pas
+};
+const storePhoto = () => {
+  const p = pendingPhoto;
+  if (!p || p.busy) return;
+  p.busy = true;
+  photoPut(p.id, p.rec).then(() => {
+    p.busy = false;
+    if (p.id !== memId) return photoSweep(savedId, p.id);        // remplacée ou effacée entre-temps
+    commitPhoto(p);
+  }, e => {
+    p.busy = false;
+    if (p.id !== memId || savedId === p.id) return;
+    if (p.n++) return photoFailed(e);
+    dropStored().then(storePhoto);       // second essai, sur une connexion neuve et la place de l'ancien travail libérée
+  });
+};
+const commitPhoto = p => {
+  if (savedId === p.id) return;
+  const prev = savedId;
+  savedId = p.id;
+  if (!writeSession(true)) return photoFailed(new Error('session non écrite'));
+  pendingPhoto = null; sess = null;
+  unnote('unsaved'); unnote('other');
+  photoSweep(p.id, prev);
+};
+// Oublie ce qui est enregistré : la photo qu'on vient de choisir a remplacé le travail précédent, qui ne doit pas ressurgir.
+const dropStored = () => { sess = null; savedId = null; lsDel(SKEY); lastStored = lsGet(SKEY); return photoClear().catch(() => {}); };
+const photoFailed = e => {
+  console.warn('Ratio : photo non enregistrée', e);
+  dropStored();
+  unsaved(e && e.name === 'QuotaExceededError' ? 'quota' : 'photo');
+};
+const keepHere = () => { if (!st.img) return; unnote(); persistPhoto(null); };
+
+// Remet le rognage, le cadrage et les repères enregistrés sur la photo qui vient d'être rouverte.
+// Rend false s'ils ne s'y appliquent plus (copie de travail d'autres proportions, données illisibles).
+const applySession = s => {
+  const g = s.geo, FW = st.img.width, FH = st.img.height;
+  if (!g) return false;
+  let kx = FW / g.w, ky = FH / g.h;
+  if (Math.abs(kx - ky) > 0.01 * kx) return false;
+  if (g.w === FW && g.h === FH) kx = ky = 1;
+  const c = fitCrop({ x: g.crop.x * kx, y: g.crop.y * ky, w: g.crop.w * kx, h: g.crop.h * ky });
+  const pt = q => ({ x: clamp(q.x * kx, -c.x, FW - c.x), y: clamp(q.y * ky, -c.y, FH - c.y) });     // un repère peut être hors de la zone gardée
+  Object.assign(st, { crop: c, iw: c.w, ih: c.h, mode: s.mode, zoom: s.zoom,
+    cx: g.cx == null ? c.w / 2 : clamp(g.cx * kx, 0, c.w), cy: g.cy == null ? c.h / 2 : clamp(g.cy * ky, 0, c.h),
+    marks: g.marks.map(m => { const k = { a: pt(m.a) }; if (m.b) k.b = pt(m.b); if (m.name) k.name = m.name; return k; }) });
+  return true;
+};
+// Reprise du dernier travail : relit sa photo, puis remet le reste en un seul temps (voir load).
+// Elle finit toujours dans l'un de ces trois états, et ne détruit rien d'elle-même :
+// repris · photo absente (constaté par une lecture réussie) · échec, où tout ce qui est enregistré reste intact pour un nouvel essai.
+const endResume = () => { ui.restoring = false; clearTimeout(slowTimer); lsDel(BOOT); };
+const resume = () => {
+  if (!sess || sess.later || memId) return;
+  const s = sess, my = ++tries;
+  ui.restoring = true; unnote('resume');
+  lsSet(BOOT, String(Date.now()));       // si la page meurt pendant la reprise, la prochaine visite ne la relancera pas d'office
+  clearTimeout(slowTimer);
+  if (!document.hidden) slowTimer = setTimeout(() => { if (my === tries && ui.restoring) resumeFailed(); }, 5000);     // n'arrête rien : une réponse tardive reste acceptée
+  render();
+  photoGet(s.photoId).then(rec => {
+    if (my !== tries || memId) return;
+    if (!rec || !(rec.bytes instanceof ArrayBuffer) || !rec.bytes.byteLength) return resumeGone();
+    load(new Blob([rec.bytes], { type: typeof rec.type === 'string' ? rec.type : '' }), { s, my });
+  }, e => { if (my !== tries || memId) return; console.warn('Ratio : lecture de la photo impossible', e); resumeFailed(); });
+};
+const resumed = s => {
+  let whole;
+  try { whole = applySession(s); ui.restoring = false; ui.resumed = whole; photoUI(); render(); }
+  catch (e) { console.warn('Ratio : reprise impossible', e); blank(); return resumeFailed(); }
+  endResume(); sess = null;
+  memId = savedId = s.photoId; lastMem = pack();
+  unnote('resume');
+  if (!whole) note('partial', 'La photo a été retrouvée, mais pas vos repères.');
+  photoSweep(memId);
+};
+const resumeGone = () => {
+  endResume();
+  if (lsGet(SKEY) !== lastStored) { leaving = true; return location.reload(); }      // une autre fenêtre vient d'enregistrer autre chose : on repart de là
+  lsDel(SKEY); lastStored = lsGet(SKEY); sess = null; savedId = null;
+  note('gone', 'La photo de votre dernier travail n\'a pas été retrouvée sur cet appareil : il n\'a pas pu être repris. Le format de la feuille est conservé.');
+  render();
+};
+const resumeFailed = () => {
+  endResume();
+  note('resume', 'Votre dernier travail n\'a pas pu être rouvert.', ['Réessayer', resume], ['Effacer', forgetAsk]);
+  render();
+};
+// Retour à l'état sans photo ; la feuille et ses réglages restent.
+const ADVICE0 = $('advice').textContent, PICK0 = $('pick').textContent;
+const blank = () => {
+  act = null; ptrs.clear();
+  if (ui.crop) { ui.crop = null; ui.open = ui.reopen; }
+  Object.assign(st, { img: null, crop: null, iw: 0, ih: 0, orig: null, mode: null, zoom: 1, cx: 0, cy: 0, marks: [], sel: -1, hover: null });
+  cam.z = 1; memId = null; ui.resumed = false;
+  $('thumb').removeAttribute('src'); $('thumb').style.display = '';
+  $('pick').textContent = PICK0; $('advice').textContent = ADVICE0;
+  $('photoActs').hidden = $('cropClear').hidden = $('photoErr').hidden = true;
+};
+// Efface la photo et le travail, à l'écran comme dans le navigateur. La session d'abord : plus rien ne peut alors la faire revenir.
+const forget = () => {
+  const had = savedId || pendingPhoto || lastStored;
+  tries++; picks++;                      // ni reprise ni chargement en cours ne doit aboutir
+  clearTimeout(saveTimer); saveTimer = 0; clearTimeout(slowTimer);
+  sess = null; savedId = null; pendingPhoto = null; ui.restoring = false;
+  lsDel(SKEY); lsDel(BOOT); lastStored = lsGet(SKEY);
+  st.orient = 'auto'; st.tool = 'move'; ui.tab = 'photo'; ui.open = true;
+  blank(); unnote(); render();
+  photoClear().catch(e => {
+    if (!canStore || !had) return;
+    console.warn('Ratio : photo non effacée', e);
+    note('err', 'La photo n\'a pas pu être effacée de cet appareil. Pour la supprimer, effacez les données de ce site dans les réglages du navigateur.');
+  });
+};
+// La question est posée dans la page : les boîtes de dialogue du navigateur sont refusées dans certains aperçus.
+const forgetAsk = () => {
+  const n = st.marks.length, cropped = !!st.img && (st.crop.w !== st.img.width || st.crop.h !== st.img.height);
+  if (st.img && !n && !cropped) return forget();         // rien à perdre : pas de question
+  const back = noteKind && noteKind !== 'ask' ? noteArgs : null;
+  const what = [cropped && 'rognage', n && (n > 1 ? n + ' repères' : '1 repère')].filter(Boolean).join(', ');
+  note('ask', st.img ? `Effacer la photo et tout ce que vous avez fait dessus (${what}) ? Ils seront aussi supprimés de cet appareil.`
+    : 'Effacer de cet appareil la photo et les repères de votre dernier travail ?',
+    ['Effacer', forget], ['Annuler', () => back ? note(...back) : unnote()]);
+};
+$('forget').onclick = forgetAsk;
+const keepUI = () => {
+  $('keepT').textContent = canStore
+    ? 'Rien n\'est envoyé sur Internet : la photo et vos repères sont enregistrés dans ce navigateur, sur cet appareil, pour reprendre plus tard. Ce n\'est pas une sauvegarde (le navigateur peut les effacer, et rien n\'est gardé en navigation privée) : exportez l\'image pour conserver un résultat.'
+    : 'Rien n\'est envoyé sur Internet. Ici, le navigateur ne permet pas d\'enregistrer votre travail : il sera perdu à la fermeture de la page.';
+};
+
 /* ---------- photo ---------- */
-function load(file) {
+// `re` : reprise d'un travail enregistré { s : session, my : numéro de la tentative }.
+function load(file, re) {
   if (!file) return;
-  const name = file.name || 'Image collée';
+  const my = re ? 0 : ++picks;
+  const name = re ? re.s.name : file.name || 'Image collée';
   const url = URL.createObjectURL(file), img = new Image();
+  // La dernière photo choisie l'emporte, quel que soit l'ordre des décodages ; une reprise s'efface devant une photo choisie entre-temps.
+  const stale = () => re ? re.my !== tries || !!memId : my !== picks;
   const fail = () => {
     URL.revokeObjectURL(url);
+    if (stale()) return;
+    if (re) return resumeFailed();
     $('photoErr').textContent = `Impossible de lire « ${name} » : ce format d'image n'est pas pris en charge par ce navigateur.`;
     $('photoErr').hidden = false;
   };
   img.onload = () => {
+    if (stale()) return URL.revokeObjectURL(url);
     const nw = img.naturalWidth, nh = img.naturalHeight;
     if (!nw || !nh) return fail();
     let work;
@@ -1057,21 +1435,28 @@ function load(file) {
       work = document.createElement('canvas');
       work.width = Math.max(1, Math.round(nw * f)); work.height = Math.max(1, Math.round(nh * f));
       const wc = work.getContext('2d');
+      wc.fillStyle = PAPER; wc.fillRect(0, 0, work.width, work.height);      // pas de transparence : la copie enregistrée (JPEG) rend la même image
       wc.imageSmoothingQuality = 'high';
       wc.drawImage(img, 0, 0, work.width, work.height);
     } catch { return fail(); }
     URL.revokeObjectURL(url);
 
     if (ui.crop) { ui.crop = null; ui.open = ui.reopen; }
+    // une reprise rouvre la copie enregistrée : la taille du fichier d'origine vient alors de la session
+    const ow = re && re.s.ow || nw, oh = re && re.s.oh || nh;
+    memId = null;                 // rien ne s'enregistre tant que cette photo n'est pas rattachée à sa session
     Object.assign(st, { img: work, crop: { x: 0, y: 0, w: work.width, h: work.height }, iw: work.width, ih: work.height,
-      orig: { name, w: nw, h: nh, f: work.width / nw },
+      orig: { name, w: ow, h: oh, f: work.width / ow },
       zoom: 1, cx: work.width / 2, cy: work.height / 2, mode: null, marks: [], sel: -1, hover: null });
-    act = null; ptrs.clear(); cam.z = 1;
+    act = null; ptrs.clear(); cam.z = 1; ui.resumed = false;
     $('photoErr').hidden = true;
     $('pick').textContent = 'Changer';
+    if (re) return resumed(re.s);       // le travail enregistré revient dans le même temps que sa photo
+    tries++; endResume(); sess = null; unnote();        // une photo choisie remplace le travail précédent, repris ou non
     if (ui.tab === 'photo') ui.tab = 'sheet';      // sur téléphone, on enchaîne sur l'étape suivante
     photoUI();
     render();
+    persistPhoto(file);
   };
   img.onerror = fail;
   img.src = url;
@@ -1175,6 +1560,7 @@ $('marks').addEventListener('input', e => {
   const el = e.target.closest('[data-name]'), m = el && st.marks[+el.dataset.name];
   if (!m) return;
   m.name = el.value;
+  queueSave();
   const a = toSheet(m.a), b = m.b && toSheet(m.b);
   el.closest('li').querySelector('b').textContent = nameOf(m) || (b ? cm(dist(a, b)) : 'Point');
   schedule(0);
@@ -1441,8 +1827,27 @@ if (coarse()) { $('dropT').textContent = 'Ajoutez votre photo'; $('dropS').textC
 $('w').value = st.w; $('h').value = st.h;
 syncMargins();
 syncPreset();
+keepUI();
+for (const ev of ['pointerdown', 'keydown', 'wheel']) addEventListener(ev, () => { if (ui.resumed) { ui.resumed = false; schedule(0); } }, { capture: true, passive: true });
+// Le travail est écrit peu après chaque changement, et sans attendre quand la page passe à l'arrière-plan ou se ferme.
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) { flushSave(); if (ui.restoring) { lsDel(BOOT); clearTimeout(slowTimer); } return; }
+  others();
+  if (leaving) return;
+  if (ui.restoring && autoRetry++ < 2) resume();          // une lecture lancée avant la mise en veille peut ne jamais répondre
+  else if (pendingPhoto && pendingPhoto.id === memId && savedId !== memId) { pendingPhoto.busy = false; storePhoto(); }
+});
+addEventListener('pagehide', () => { flushSave(); if (ui.restoring) lsDel(BOOT); });
+addEventListener('pageshow', e => { if (e.persisted) others(); });
+addEventListener('storage', e => { if (e.key === SKEY || e.key === null) others(); });
 new ResizeObserver(() => render()).observe(stage);
+// Reprise du dernier travail, sauf si la tentative précédente n'a jamais abouti (page fermée de force, mémoire insuffisante…).
+const stuck = +lsGet(BOOT);
+if (sess && !sess.later && !(stuck && Date.now() - stuck > 3000)) ui.restoring = true;
 render();
+if (ui.restoring) resume();
+else if (sess && sess.later) note('later', 'Un travail enregistré par une version plus récente de Ratio ne peut pas être rouvert ici.', ['Recharger', () => location.reload()], ['Effacer', forgetAsk]);
+else if (sess) resumeFailed();
 })();
 </script>
 </body>
